@@ -26,7 +26,9 @@ node_modules/
 
 # Local official datasets / generated indexes
 data/raw/
-data/generated/
+data/generated/*
+# 역 데이터는 Vercel 배포에 필요 (214KB)
+!data/generated/subway-stations.json
 
 # Hook and local audit logs
 logs/
