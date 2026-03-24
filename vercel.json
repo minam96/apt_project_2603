@@ -1,24 +1,21 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "framework": null,
-  "functions": {
-    "api/[...path].js": {
-      "maxDuration": 30,
-      "memory": 1024
-    }
-  },
-  "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/calc.html", "destination": "/calc.html" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ],
-  "headers": [
+  "version": 2,
+  "builds": [
     {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "s-maxage=60, stale-while-revalidate=300" }
-      ]
+      "src": "api/[...path].js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "outputDirectory": "dist"
+      }
     }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/[...path].js" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
