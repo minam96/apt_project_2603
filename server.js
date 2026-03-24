@@ -460,10 +460,11 @@ function writeCorsHeaders(res, req) {
     if (ALLOWED_ORIGINS.includes(origin)) {
       res.setHeader("Access-Control-Allow-Origin", origin);
     }
-  } else {
-    // 개발 환경: 모든 origin 허용
+  } else if (process.env.NODE_ENV !== "production") {
+    // 로컬 개발 환경에서만 와일드카드 허용
     res.setHeader("Access-Control-Allow-Origin", "*");
   }
+  // production + ALLOWED_ORIGINS 미설정 = CORS 헤더 없음 (차단)
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
