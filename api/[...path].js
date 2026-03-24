@@ -10,13 +10,15 @@ const ALLOWED_PREFIXES = [
   "house-trade", "house-rent",
   "comm-trade",
   "molit", "trade",
-  "building",
-  "listing-grid", "listing-location-insights",
+  "building", "building-hub-health",
+  "listing-grid", "redevelopment-grid",
+  "listing-location-insights", "redevelopment-location-insights",
   "nearby-stations",
   "price-trend",
-  "naver-search",
-  "seoul/brokers",
-  "seoul/building",
+  "naver-search", "naver-complex",
+  "law-search",
+  "seoul/brokers", "seoul/building",
+  "vworld/land-price", "vworld/land-use", "vworld/address", "vworld/zoning",
 ];
 
 let initialized = false;
