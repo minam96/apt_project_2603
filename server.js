@@ -79,6 +79,14 @@ const VWORLD_LANDUSE_API_KEY =
 const VWORLD_DATA_DOMAIN =
   ENV_FILE.VWORLD_DATA_DOMAIN || process.env.VWORLD_DATA_DOMAIN || "";
 
+// VWorld API 호출 시 Referer 헤더 (도메인 인증용)
+function vworldHeaders() {
+  if (VWORLD_DATA_DOMAIN) {
+    return { Referer: `https://${VWORLD_DATA_DOMAIN}/` };
+  }
+  return {};
+}
+
 // ── 서울 열린데이터 광장 API 키 ──
 const SEOUL_BUILDING_API_KEY =
   ENV_FILE.DATA_SEOUL_getLandUse ||
@@ -1384,6 +1392,9 @@ function sanitizeUrl(targetUrl) {
 function fetchText(targetUrl, headers = {}) {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(targetUrl);
+    // VWorld API 호출 시 Referer 자동 추가 (도메인 인증)
+    const autoHeaders =
+      parsedUrl.hostname.endsWith("vworld.kr") ? vworldHeaders() : {};
     const client = parsedUrl.protocol === "http:" ? http : https;
     const request = client.request(
       {
@@ -1393,6 +1404,7 @@ function fetchText(targetUrl, headers = {}) {
         path: parsedUrl.pathname + parsedUrl.search,
         headers: {
           "User-Agent": USER_AGENT,
+          ...autoHeaders,
           ...headers,
         },
       },
