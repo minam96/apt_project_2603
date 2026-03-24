@@ -1,0 +1,53 @@
+# API 키 등 민감한 환경변수 — 절대 커밋하지 않음
+.env
+.env.local
+.env.*.local
+
+# MCP 설정 (API 키 포함)
+.mcp.json
+
+# Claude Code 민감 설정
+.claude/settings.local.json
+.claude/auto-commit.approved
+
+# 내부 작업 기록 (보안 교훈/취약점 이력 포함)
+tasks/
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+.vscode/
+
+# 참조용 클론 레포
+_ref_*/
+
+# Node
+node_modules/
+
+# Local official datasets / generated indexes
+data/raw/
+data/generated/
+
+# Hook and local audit logs
+logs/
+.github/logs/
+
+# Build output
+dist/
+
+# Local cache data
+data/cache/
+
+# Large raw data files
+*.xlsx
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Server log files
+*.log
+*.pid
+
+# gstack
+gstack/

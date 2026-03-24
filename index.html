@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>부동산분석 — 부동산 실거래가 대시보드</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <!-- ── 헤더 ── -->
+    <header>
+      <div class="logo">🏢 부동산분석</div>
+      <div class="tabs">
+        <button
+          class="tab active"
+          data-tab="trade"
+          onclick="switchTab('trade')"
+        >
+          실거래가
+        </button>
+        <button class="tab" data-tab="rent" onclick="switchTab('rent')">
+          전월세
+        </button>
+        <button class="tab" data-tab="trend" onclick="switchTab('trend')">
+          시세추이
+        </button>
+        <button
+          class="tab"
+          data-tab="calc"
+          onclick="
+            window.open(
+              location.protocol === 'file:'
+                ? 'calc.html'
+                : 'http://localhost:3000/calc.html',
+              '_blank',
+            )
+          "
+        >
+          금융계산기 ↗
+        </button>
+        <button class="tab" data-tab="listings" onclick="switchTab('listings')">
+          사업성분석
+        </button>
+        <button class="tab" data-tab="brokers" onclick="switchTab('brokers')">
+          부동산 찾기
+        </button>
+      </div>
+      <div class="header-right">
+        <div
+          class="api-status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <span id="statusDot" aria-hidden="true">🔴</span>
+          <span id="statusText">확인 중...</span>
+        </div>
+        <button
+          class="api-btn"
+          type="button"
+          title="API 설정 열기"
+          aria-label="API 설정 열기"
+          onclick="openModal()"
+        >
+          🔑 API 설정
+        </button>
+      </div>
+    </header>
+
+    <!-- ── 티커바 ── -->
+    <div class="ticker" id="ticker"></div>
+
+    <!-- ── 메인 ── -->
+    <div class="main">
+      <div class="content">
+        <!-- ━━ 실거래가 탭 ━━ -->
+        <div class="tab-content active" id="tabTrade">
+          <div class="type-bar" id="tradeTypeBar">
+            <button
+              class="type-chip active"
+              data-type="apt"
+              onclick="setPropertyType('apt')"
+            >
+              아파트
+            </button>
+            <button
+              class="type-chip"
+              data-type="offi"
+              onclick="setPropertyType('offi')"
+            >
+              오피스텔
+            </button>
+            <button
+              class="type-chip"
+              data-type="villa"
+              onclick="setPropertyType('villa')"
+            >
+              연립다세대
+            </button>
+            <button
+              class="type-chip"
+              data-type="house"
+              onclick="setPropertyType('house')"
+            >
+              단독/다가구
+            </button>
+          </div>
+          <div class="filter-bar">
+            <div class="region-pair">
+              <select
+                id="tradeSidoSelect"
+                aria-label="실거래 시도 선택"
+              ></select>
+              <select
+                id="regionSelect"
+                aria-label="실거래 시군구 선택"
+                onchange="onRegionChange()"
+              ></select>
+            </div>
+            <select
+              id="monthSelect"
+              aria-label="실거래 조회 월 선택"
+              onchange="onRegionChange()"
+            ></select>
+            <div style="display: flex; gap: 4px">
+              <button
+                class="cond-btn active"
+                data-cond="all"
+                onclick="setCond('all')"
+              >
+                전체
+              </button>
+              <button
+                class="cond-btn"
+                data-cond="high"
+                onclick="setCond('high')"
+              >
+                신고가
+              </button>
+              <button class="cond-btn" data-cond="10" onclick="setCond('10')">
+                10억+
+              </button>
+              <button class="cond-btn" data-cond="50" onclick="setCond('50')">
+                50억+
+              </button>
+            </div>
+            <input
+              type="text"
+              id="searchInput"
+              aria-label="실거래 단지명 검색"
+              placeholder="단지명 검색..."
+              oninput="debounce(renderTable)"
+            />
+            <button
+              class="load-btn"
+              type="button"
+              title="실거래 조회"
+              onclick="loadData()"
+            >
+              🔄 조회
+            </button>
+            <button
+              class="load-btn"
+              type="button"
+              title="엑셀 다운로드"
+              onclick="exportTradeExcel()"
+              style="background:#27ae60"
+            >
+              📥 엑셀
+            </button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">
+                선택한 지역과 조건에 맞는 실거래가 목록
+              </caption>
+              <thead id="tableHead"></thead>
+              <tbody id="tableBody">
+                <tr>
+                  <td colspan="8" class="state-msg">조회 버튼을 눌러주세요</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination" id="pagination"></div>
+        </div>
+
+        <!-- ━━ 전월세 탭 ━━ -->
+        <div class="tab-content" id="tabRent">
+          <div class="type-bar" id="rentTypeBar">
+            <button
+              class="type-chip active"
+              data-type="apt"
+              onclick="setRentPropertyType('apt')"
+            >
+              아파트
+            </button>
+            <button
+              class="type-chip"
+              data-type="offi"
+              onclick="setRentPropertyType('offi')"
+            >
+              오피스텔
+            </button>
+            <button
+              class="type-chip"
+              data-type="villa"
+              onclick="setRentPropertyType('villa')"
+            >
+              연립다세대
+            </button>
+            <button
+              class="type-chip"
+              data-type="house"
+              onclick="setRentPropertyType('house')"
+            >
+              단독/다가구
+            </button>
+          </div>
+          <div class="filter-bar">
+            <div class="region-pair">
+              <select
+                id="rentSidoSelect"
+                aria-label="전월세 시도 선택"
+              ></select>
+              <select
+                id="rentRegionSelect"
+                aria-label="전월세 시군구 선택"
+              ></select>
+            </div>
+            <select
+              id="rentMonthSelect"
+              aria-label="전월세 조회 월 선택"
+            ></select>
+            <div class="rent-type-toggle">
+              <button
+                class="rent-type-btn active"
+                data-rt="all"
+                onclick="setRentType('all')"
+              >
+                전체
+              </button>
+              <button
+                class="rent-type-btn"
+                data-rt="jeonse"
+                onclick="setRentType('jeonse')"
+              >
+                전세
+              </button>
+              <button
+                class="rent-type-btn"
+                data-rt="monthly"
+                onclick="setRentType('monthly')"
+              >
+                월세
+              </button>
+            </div>
+            <input
+              type="text"
+              id="rentSearchInput"
+              aria-label="전월세 단지명 검색"
+              placeholder="단지명 검색..."
+              oninput="debounce(renderRentTable)"
+            />
+            <button
+              class="load-btn"
+              type="button"
+              title="전월세 조회"
+              onclick="loadRentData()"
+            >
+              🔄 조회
+            </button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">
+                선택한 지역과 조건에 맞는 전월세 거래 목록
+              </caption>
+              <thead id="rentTableHead"></thead>
+              <tbody id="rentTableBody">
+                <tr>
+                  <td colspan="8" class="state-msg">조회 버튼을 눌러주세요</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination" id="rentPagination"></div>
+        </div>
+
+        <!-- ━━ 시세추이 탭 ━━ -->
+        <div class="tab-content" id="tabTrend">
+          <div class="trend-controls">
+            <div class="trend-input-wrap">
+              <input
+                type="text"
+                id="trendInput"
+                aria-label="시세추이 단지명 검색"
+                placeholder="단지명을 클릭하거나 직접 입력하세요"
+                autocomplete="off"
+              />
+              <div class="trend-suggest-menu" id="trendSuggestMenu"></div>
+            </div>
+            <div class="region-pair">
+              <select
+                id="trendSidoSelect"
+                aria-label="시세추이 시도 선택"
+              ></select>
+              <select
+                id="trendRegion"
+                aria-label="시세추이 시군구 선택"
+              ></select>
+            </div>
+            <button
+              class="load-btn"
+              type="button"
+              title="시세추이 조회"
+              onclick="loadTrendData()"
+            >
+              📈 조회
+            </button>
+          </div>
+          <div class="trend-chips" id="trendChips"></div>
+          <canvas id="trendCanvas"></canvas>
+        </div>
+
+        <!-- ━━ 금융계산기 탭 ━━ -->
+        <div class="tab-content" id="tabCalc">
+          <div class="calc-grid">
+            <div class="calc-card">
+              <h3>🏦 대출 상환 계산기</h3>
+              <div class="calc-field">
+                <label>대출 원금 (만원)</label>
+                <input type="number" id="loanPrincipal" value="30000" />
+              </div>
+              <div class="calc-field">
+                <label>연 이자율 (%)</label>
+                <input type="number" id="loanRate" value="3.5" step="0.1" />
+              </div>
+              <div class="calc-field">
+                <label>상환 기간 (년)</label>
+                <input type="number" id="loanYears" value="30" />
+              </div>
+              <button class="load-btn" onclick="calcLoan()" style="width: 100%">
+                계산하기
+              </button>
+              <div class="calc-result" id="loanResult"></div>
+            </div>
+            <div class="calc-card">
+              <h3>📈 복리 투자 계산기</h3>
+              <div class="calc-field">
+                <label>초기 투자금 (만원)</label>
+                <input type="number" id="investInit" value="5000" />
+              </div>
+              <div class="calc-field">
+                <label>월 적립금 (만원)</label>
+                <input type="number" id="investMonthly" value="100" />
+              </div>
+              <div class="calc-field">
+                <label>연 수익률 (%)</label>
+                <input type="number" id="investRate" value="5" step="0.1" />
+              </div>
+              <div class="calc-field">
+                <label>투자 기간 (년)</label>
+                <input type="number" id="investYears" value="20" />
+              </div>
+              <button
+                class="load-btn"
+                onclick="calcInvest()"
+                style="width: 100%"
+              >
+                계산하기
+              </button>
+              <div class="calc-result" id="investResult"></div>
+            </div>
+            <div class="calc-card" style="grid-column: span 2">
+              <h3>💰 월 현금흐름 계산기</h3>
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: 1fr 1fr 1fr 1fr;
+                  gap: 12px;
+                "
+              >
+                <div class="calc-field">
+                  <label>월 소득 (만원)</label>
+                  <input type="number" id="cfIncome" value="500" />
+                </div>
+                <div class="calc-field">
+                  <label>월 대출상환 (만원)</label>
+                  <input type="number" id="cfLoan" value="120" />
+                </div>
+                <div class="calc-field">
+                  <label>월 생활비 (만원)</label>
+                  <input
+                    type="number"
+                    id="cfLiving"
+                    value="0"
+                    placeholder="0=소득 40%"
+                  />
+                </div>
+                <div class="calc-field">
+                  <label>기타 지출 (만원)</label>
+                  <input type="number" id="cfOther" value="0" />
+                </div>
+              </div>
+              <button
+                class="load-btn"
+                onclick="calcCashflow()"
+                style="width: 100%; margin-top: 8px"
+              >
+                계산하기
+              </button>
+              <div class="calc-result" id="cfResult"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ━━ 매물검색 탭 ━━ -->
+        <div class="tab-content" id="tabListings">
+          <div class="listing-panel">
+            <div class="listing-toolbar">
+              <div class="region-pair">
+                <select
+                  id="listingSidoSelect"
+                  aria-label="사업성분석 시도 선택"
+                ></select>
+                <select
+                  id="listingRegionSelect"
+                  aria-label="사업성분석 시군구 선택"
+                ></select>
+              </div>
+              <input
+                type="text"
+                id="listingSearch"
+                aria-label="사업성분석 단지명 검색"
+                placeholder="단지명 필터... Enter로 서버 재조회"
+                oninput="debounce(renderListingTable)"
+                onkeydown="if (event.key === 'Enter') loadListingData();"
+              />
+              <select
+                id="listingZoneFilter"
+                aria-label="사업성분석 용도지역 필터"
+                onchange="renderListingTable()"
+              >
+                <option value="all">용도지역 전체</option>
+              </select>
+              <select
+                id="listingFeasibilityFilter"
+                aria-label="사업성분석 결과 필터"
+                onchange="renderListingTable()"
+              >
+                <option value="all">사업성 전체</option>
+                <option value="YES">YES만</option>
+                <option value="NO">NO만</option>
+                <option value="UNAVAILABLE">계산불가만</option>
+              </select>
+              <label
+                style="
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 4px;
+                  font-size: 13px;
+                  cursor: pointer;
+                "
+              >
+                <input
+                  type="checkbox"
+                  id="listingAgeFilter"
+                  onchange="renderListingTable()"
+                  checked
+                />
+                30년+ 단지만
+              </label>
+              <button
+                class="load-btn"
+                type="button"
+                title="사업성분석 조회"
+                onclick="loadListingData()"
+              >
+                📊 조회
+              </button>
+              <button
+                class="load-btn"
+                type="button"
+                title="엑셀 다운로드"
+                onclick="exportListingExcel()"
+                style="background:#27ae60"
+              >
+                📥 엑셀
+              </button>
+            </div>
+            <div class="listing-summary" id="listingSummary">
+              <div class="listing-summary-card">
+                <span>표시 단지</span>
+                <strong id="listingSumVisible">0</strong>
+              </div>
+              <div class="listing-summary-card">
+                <span>확정 YES</span>
+                <strong id="listingSumYes">0</strong>
+              </div>
+              <div class="listing-summary-card" id="listingSourceCard">
+                <span>공식 계산 가능</span>
+                <strong id="listingSumSource">0</strong>
+              </div>
+              <div
+                class="listing-summary-card"
+                id="listingStatusCard"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                <span>분석 상태</span>
+                <strong id="listingSumStatus">대기</strong>
+              </div>
+            </div>
+            <div
+              class="listing-note"
+              id="listingStatusNote"
+              role="status"
+              aria-live="polite"
+            >
+              최근 실거래로 확인된 단지를 기준으로 건축HUB(건축물대장
+              표제부/총괄표제부/지역지구구역) 정보를 묶어 계산합니다. 최근
+              거래가 없던 단지는 표에 바로 보이지 않을 수 있습니다.
+            </div>
+            <div class="table-wrap">
+              <table class="listing-table" aria-describedby="listingStatusNote">
+                <caption class="sr-only">
+                  사업성분석 결과 표. 용도지역, 법정 상한, 현재 용적률,
+                  대지면적, 세대수, 근처 역, 평지 추정, 초등학교와 공원 접근성,
+                  예상 신축 세대와 사업성 판단을 보여줍니다.
+                </caption>
+                <thead id="listingTableHead"></thead>
+                <tbody id="listingTableBody">
+                  <tr>
+                    <td colspan="15" class="state-msg">
+                      사업성 분석 데이터를 불러오는 중...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination" id="listingPagination"></div>
+          </div>
+        </div>
+
+        <!-- ── 부동산 찾기 탭 ── -->
+        <div class="tab-content" id="tabBrokers">
+          <div class="filter-bar">
+            <select id="brokerGuSelect" aria-label="자치구 선택"></select>
+            <select id="brokerDongSelect" aria-label="법정동 선택">
+              <option value="">전체 동</option>
+            </select>
+            <input
+              type="text"
+              id="brokerSearchInput"
+              aria-label="상호명 검색"
+              placeholder="상호명/대표자 검색..."
+              oninput="debounce(renderBrokerTable)()"
+            />
+            <div style="display: flex; gap: 4px">
+              <button
+                class="cond-btn active"
+                data-sort="trust"
+                onclick="setBrokerSort('trust')"
+              >
+                신뢰도순
+              </button>
+              <button
+                class="cond-btn"
+                data-sort="years"
+                onclick="setBrokerSort('years')"
+              >
+                연차순
+              </button>
+              <button
+                class="cond-btn"
+                data-sort="views"
+                onclick="setBrokerSort('views')"
+              >
+                조회순
+              </button>
+            </div>
+            <button
+              class="load-btn"
+              type="button"
+              title="중개업소 검색"
+              onclick="loadBrokerData()"
+            >
+              검색
+            </button>
+            <button
+              class="load-btn"
+              type="button"
+              title="엑셀 다운로드"
+              onclick="exportBrokerExcel()"
+              style="background:#27ae60"
+            >
+              📥 엑셀
+            </button>
+          </div>
+          <div id="brokerSummary" class="broker-summary"></div>
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">
+                서울시 부동산 중개업소 목록
+              </caption>
+              <thead id="brokerTableHead"></thead>
+              <tbody id="brokerTableBody">
+                <tr>
+                  <td colspan="7" class="state-msg">
+                    자치구를 선택하고 검색해주세요
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination" id="brokerPagination"></div>
+        </div>
+      </div>
+
+      <!-- ── 사이드바 ── -->
+      <div class="sidebar" id="sidebar">
+        <div class="card">
+          <h3>📊 오늘 요약</h3>
+          <div class="summary-grid" id="summaryGrid">
+            <div class="summary-item">
+              <div class="summary-val" id="sumTotal">0</div>
+              <div class="summary-label">전국 거래</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-val" id="sumHigh">0</div>
+              <div class="summary-label">신고가</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-val" id="sumMax">—</div>
+              <div class="summary-label">최고거래가</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-val" id="sumAvg">—</div>
+              <div class="summary-label">평균거래가</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>🏆 신고가 TOP 10</h3>
+          <ul class="top-list" id="topList"></ul>
+        </div>
+        <div class="card">
+          <h3>📍 지역별 거래량</h3>
+          <div id="regionChart"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 서버 상태 모달 ── -->
+    <div class="modal-overlay" id="modalOverlay">
+      <div class="modal">
+        <h3>🔑 서버 연결 정보</h3>
+        <p style="font-size: 12px; color: var(--text2); margin-bottom: 12px">
+          API 키는 서버(.env)에서 안전하게 관리됩니다.<br />
+          서버가 실행 중이면 자동으로 연동됩니다.
+        </p>
+        <div class="modal-btns">
+          <button class="btn-primary" onclick="closeModal()">확인</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 건축물대장 모달 ── -->
+    <div class="modal-overlay" id="buildingModal">
+      <div class="modal" style="width: 460px">
+        <h3>🏗️ 건축물대장 정보</h3>
+        <div id="buildingModalContent">
+          <div class="state-msg">불러오는 중...</div>
+        </div>
+        <div class="modal-btns" style="margin-top: 16px">
+          <button class="btn-secondary" onclick="closeBuildingModal()">
+            닫기
+          </button>
+        </div>
+      </div>
+    </div>
+
+
+    <script type="module" src="/src/main.js"></script>
+
+    <footer
+      style="
+        margin: 24px auto 0;
+        padding: 12px 0;
+        border-top: 1px solid #e0e0e0;
+        color: #999;
+        font-size: 11px;
+        text-align: center;
+        line-height: 1.6;
+      "
+    >
+      데이터 출처:
+      <a
+        href="https://www.data.go.kr/"
+        target="_blank"
+        rel="noopener"
+        style="color: #4a90d9"
+        >공공데이터포털</a
+      >
+      ·
+      <a
+        href="https://www.vworld.kr/"
+        target="_blank"
+        rel="noopener"
+        style="color: #4a90d9"
+        >V-World</a
+      >
+      ·
+      <a
+        href="https://open.law.go.kr/"
+        target="_blank"
+        rel="noopener"
+        style="color: #4a90d9"
+        >법제처</a
+      >
+      &nbsp;|&nbsp; © 2026 apt-project · MIT License
+    </footer>
+  </body>
+</html>

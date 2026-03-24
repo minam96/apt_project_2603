@@ -1,0 +1,116 @@
+/* ══════════════════════════════════════════════════════════
+   brokers.css — 부동산 찾기 탭 스타일
+   ══════════════════════════════════════════════════════════ */
+
+/* 요약 카드 */
+.broker-summary {
+  margin-bottom: 12px;
+}
+.broker-summary-card {
+  display: flex;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--surface, #f8f9fa);
+  border-radius: 8px;
+  border: 1px solid var(--border, #e2e5e9);
+  flex-wrap: wrap;
+}
+.broker-stat {
+  font-size: 0.9rem;
+  color: var(--text-secondary, #666);
+}
+.broker-stat strong {
+  color: var(--text-primary, #222);
+  font-weight: 700;
+}
+.broker-stat-clean strong {
+  color: #27ae60;
+}
+.broker-stat-veteran strong {
+  color: #2980b9;
+}
+
+/* 배지 공통 */
+.broker-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 연차 배지 */
+.broker-badge.veteran {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.broker-badge.experienced {
+  background: #dcfce7;
+  color: #166534;
+}
+.broker-badge.newcomer {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+.broker-badge.unknown {
+  background: #f3f4f6;
+  color: #9ca3af;
+}
+
+/* 행정처분 배지 */
+.broker-badge.clean {
+  background: #dcfce7;
+  color: #166534;
+}
+.broker-badge.warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* 신뢰도 배지 */
+.broker-badge.trust-high {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.broker-badge.trust-mid {
+  background: #f3f4f6;
+  color: #374151;
+}
+.broker-badge.trust-low {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* 테이블 셀 */
+.broker-name {
+  font-weight: 600;
+  color: var(--text-primary, #222);
+  margin-bottom: 2px;
+}
+.broker-addr {
+  font-size: 0.78rem;
+  color: var(--text-secondary, #888);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.broker-tel {
+  color: var(--primary, #4f7cff);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+.broker-tel:hover {
+  text-decoration: underline;
+}
+
+/* 부동산 찾기 탭 테이블 컬럼 너비 */
+#tabBrokers table {
+  table-layout: auto;
+}
+#tabBrokers th,
+#tabBrokers td {
+  padding: 8px 10px;
+  vertical-align: middle;
+}

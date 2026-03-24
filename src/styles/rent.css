@@ -1,0 +1,40 @@
+/* ============================================
+   rent.css
+   전월세 탭 styles + enhanced rent toggle
+   ============================================ */
+
+/* ── 전월세 탭 ── */
+.rent-type-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.rent-type-btn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text2);
+  font-family: var(--font);
+  transition: all 0.15s;
+}
+.rent-type-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* ── Rent Toggle Enhanced ── */
+.rent-type-btn {
+  transition: all 0.2s var(--ease-out);
+}
+.rent-type-btn:active {
+  transform: scale(0.93);
+}
+.rent-type-btn.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-color: transparent;
+  box-shadow: 0 2px 12px rgba(79, 124, 255, 0.3);
+}

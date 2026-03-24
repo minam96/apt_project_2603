@@ -1,0 +1,19 @@
+{
+  "name": "apt-dashboard",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check:ref-agents": "node scripts/check_ref_agents.js",
+    "build:stations": "python scripts/build_station_dataset.py",
+    "build:apt-coords": "python scripts/build_apartment_coordinate_index.py"
+  },
+  "devDependencies": {
+    "vite": "^5.2.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1"
+  }
+}

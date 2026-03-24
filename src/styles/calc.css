@@ -1,0 +1,112 @@
+/* ============================================
+   calc.css
+   금융계산기 탭 styles + glass enhancements
+   ============================================ */
+
+/* ── 금융계산기 탭 ── */
+.calc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.calc-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+}
+.calc-card h3 {
+  font-size: 15px;
+  margin-bottom: 16px;
+  color: var(--accent);
+}
+.calc-field {
+  margin-bottom: 12px;
+}
+.calc-field label {
+  display: block;
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 4px;
+}
+.calc-field input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: var(--mono);
+}
+.calc-result {
+  background: var(--bg3);
+  border-radius: 8px;
+  padding: 14px;
+  margin-top: 12px;
+}
+.calc-result-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.calc-result-val {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* ── Calc Cards — Glass ── */
+.calc-card {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(137, 154, 181, 0.18);
+  border-radius: 18px;
+  transition:
+    transform 0.25s,
+    border-color 0.2s,
+    box-shadow 0.25s;
+}
+.calc-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(40, 87, 197, 0.16);
+  box-shadow: 0 18px 36px rgba(35, 51, 84, 0.1);
+}
+.calc-card h3 {
+  background: linear-gradient(135deg, #102344, #325fa8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-size: 16px;
+}
+.calc-result {
+  background: linear-gradient(
+    180deg,
+    rgba(247, 250, 255, 0.95),
+    rgba(239, 244, 251, 0.92)
+  );
+  border: 1px solid rgba(137, 154, 181, 0.16);
+  border-radius: 14px;
+}
+.calc-result-row {
+  padding: 6px 4px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.calc-result-row:hover {
+  background: rgba(79, 124, 255, 0.06);
+}
+.calc-result-val {
+  background: linear-gradient(135deg, var(--accent), #8bb4ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-size: 14px;
+}
+.calc-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}

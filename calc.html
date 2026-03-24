@@ -1,0 +1,1534 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>2026 부동산 세금 시뮬레이터</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f4f7fb;
+        --bg2: #ffffff;
+        --bg3: #edf2f8;
+        --border: #d6dfeb;
+        --accent: #2857c5;
+        --accent-soft: rgba(40, 87, 197, 0.12);
+        --accent2: #6a8fd4;
+        --accent2-soft: rgba(106, 143, 212, 0.16);
+        --gold: #b88b32;
+        --gold-soft: rgba(184, 139, 50, 0.12);
+        --red: #c85c49;
+        --red-soft: rgba(200, 92, 73, 0.12);
+        --green: #0f8a68;
+        --green-soft: rgba(15, 138, 104, 0.12);
+        --text: #1f2937;
+        --text2: #5f6f82;
+        --text3: #8a95a6;
+        --font: "IBM Plex Sans KR", "Noto Sans KR", sans-serif;
+        --mono: "JetBrains Mono", monospace;
+        --shadow-sm: 0 12px 28px rgba(35, 51, 84, 0.08);
+        --shadow-md: 0 22px 48px rgba(35, 51, 84, 0.12);
+        --glass-bg: rgba(255, 255, 255, 0.82);
+        --glass-border: rgba(137, 154, 181, 0.24);
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background:
+          radial-gradient(circle at top left, rgba(106, 143, 212, 0.18), transparent 24%),
+          radial-gradient(circle at top right, rgba(184, 139, 50, 0.12), transparent 20%),
+          linear-gradient(180deg, #f8fbff 0%, #f1f5fb 45%, #eef3f9 100%);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 14px;
+        line-height: 1.6;
+        min-height: 100vh;
+        position: relative;
+        font-variant-numeric: tabular-nums;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background:
+          linear-gradient(120deg, rgba(255, 255, 255, 0.72), transparent 45%),
+          repeating-linear-gradient(
+            90deg,
+            rgba(40, 87, 197, 0.018) 0,
+            rgba(40, 87, 197, 0.018) 1px,
+            transparent 1px,
+            transparent 120px
+          );
+        opacity: 0.55;
+        z-index: -1;
+      }
+      body::after {
+        content: "";
+        position: fixed;
+        inset: auto 0 0 auto;
+        width: 34vw;
+        height: 34vw;
+        min-width: 260px;
+        min-height: 260px;
+        background: radial-gradient(circle, rgba(106, 143, 212, 0.12), transparent 68%);
+        pointer-events: none;
+        z-index: -1;
+      }
+
+      /* ── Header ── */
+      header {
+        position: sticky; top: 0; z-index: 100;
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(18px) saturate(1.2);
+        -webkit-backdrop-filter: blur(18px) saturate(1.2);
+        border-bottom: 1px solid var(--glass-border);
+        display: flex; align-items: center; gap: 16px;
+        padding: 0 24px; min-height: 64px;
+      }
+      .logo {
+        display: inline-flex; align-items: center; gap: 10px;
+        font-size: 20px; font-weight: 700;
+        color: var(--accent); white-space: nowrap;
+        text-decoration: none; letter-spacing: -0.02em;
+      }
+      .logo::before {
+        content: "";
+        width: 14px;
+        height: 14px;
+        border-radius: 4px;
+        background: linear-gradient(145deg, var(--accent), var(--accent2));
+        box-shadow: 0 10px 20px rgba(40, 87, 197, 0.24);
+      }
+      .logo-sub {
+        font-size: 11px; color: var(--text2); margin-left: 2px;
+        background: rgba(255, 255, 255, 0.72); padding: 4px 10px; border-radius: 999px;
+        font-weight: 600; border: 1px solid rgba(137, 154, 181, 0.22);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+      }
+      .tabs { display: flex; gap: 8px; margin-left: 18px; flex-wrap: wrap; }
+      .tab {
+        padding: 8px 15px; border-radius: 999px; cursor: pointer;
+        color: var(--text2); font-size: 13px; border: 1px solid rgba(137, 154, 181, 0.22);
+        background: rgba(255, 255, 255, 0.7); font-family: var(--font); position: relative;
+        transition: all 0.2s ease;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+      }
+      .tab::after {
+        content: ''; position: absolute; inset: 0;
+        border-radius: inherit;
+        box-shadow: inset 0 0 0 1px rgba(40, 87, 197, 0.06);
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      .tab.active::after,
+      .tab:hover::after { opacity: 1; }
+      .tab.active {
+        background: linear-gradient(135deg, rgba(40, 87, 197, 0.12), rgba(106, 143, 212, 0.2));
+        color: var(--accent);
+        border-color: transparent;
+        box-shadow: inset 0 0 0 1px rgba(40, 87, 197, 0.08), 0 10px 20px rgba(40, 87, 197, 0.08);
+      }
+      .tab:hover { color: var(--text); }
+      .back-link {
+        margin-left: auto; color: var(--text2); text-decoration: none;
+        font-size: 12px; padding: 8px 14px; border: 1px solid rgba(137, 154, 181, 0.24);
+        border-radius: 999px; transition: all 0.2s ease;
+        background: rgba(255, 255, 255, 0.72);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+      }
+      .back-link:hover { border-color: rgba(40, 87, 197, 0.18); color: var(--accent); }
+
+      /* ── Layout ── */
+      .container { max-width: 1280px; margin: 0 auto; padding: 28px 20px 36px; }
+      .tab-content { display: none; }
+      .tab-content.active { display: block; animation: fadeIn 0.3s ease-out; }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+      /* ── Hero / Guide Banner ── */
+      .guide-banner {
+        background:
+          linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.76)),
+          linear-gradient(135deg, rgba(40, 87, 197, 0.06), rgba(106, 143, 212, 0.08));
+        border: 1px solid var(--glass-border);
+        border-radius: 24px; padding: 24px 28px; margin-bottom: 24px;
+        box-shadow: var(--shadow-sm);
+        position: relative;
+        overflow: hidden;
+      }
+      .guide-banner::before {
+        content: "";
+        position: absolute;
+        inset: -24% auto auto 68%;
+        width: 220px;
+        height: 220px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(106, 143, 212, 0.18), transparent 70%);
+        pointer-events: none;
+      }
+      .guide-banner h2 {
+        font-size: 22px; margin-bottom: 10px; color: var(--text);
+        letter-spacing: -0.03em; position: relative;
+      }
+      .guide-banner p {
+        font-size: 14px; color: var(--text2); line-height: 1.75; max-width: 880px;
+        position: relative;
+      }
+      .guide-banner .step-chips {
+        display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; position: relative;
+      }
+      .step-chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: rgba(255, 255, 255, 0.74); border: 1px solid rgba(137, 154, 181, 0.22);
+        border-radius: 999px; padding: 8px 14px; font-size: 12px; color: var(--text2);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+      }
+      .step-chip .num {
+        background: linear-gradient(135deg, var(--accent), var(--accent2));
+        color: #fff; width: 20px; height: 20px;
+        border-radius: 50%; display: inline-flex; align-items: center;
+        justify-content: center; font-size: 10px; font-weight: 700;
+        box-shadow: 0 8px 16px rgba(40, 87, 197, 0.22);
+      }
+
+      /* ── Cards ── */
+      .calc-grid { display: grid; grid-template-columns: minmax(0, 1.04fr) minmax(340px, 0.96fr); gap: 20px; }
+      .calc-card {
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 24px; padding: 26px;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+        box-shadow: var(--shadow-sm);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+      .calc-card:hover {
+        border-color: rgba(40, 87, 197, 0.16);
+        box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
+      }
+      .calc-card.full { grid-column: 1 / -1; }
+      .calc-card h3 {
+        font-size: 20px; margin-bottom: 22px;
+        color: var(--accent);
+        letter-spacing: -0.03em;
+      }
+      .calc-field { margin-bottom: 14px; }
+      .calc-field label {
+        display: block; font-size: 12px; color: var(--text2);
+        margin-bottom: 8px; font-weight: 600;
+      }
+      .calc-field .hint {
+        font-size: 11px; color: var(--text3); margin-top: 5px;
+      }
+      .calc-field input, .calc-field select {
+        width: 100%; padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.92); color: var(--text);
+        border: 1px solid rgba(137, 154, 181, 0.26); border-radius: 14px;
+        font-size: 14px; font-family: var(--font);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+      }
+      .calc-field input:focus, .calc-field select:focus {
+        outline: none; border-color: rgba(40, 87, 197, 0.32);
+        box-shadow: 0 0 0 4px var(--accent-soft);
+        background: #fff;
+      }
+      .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .field-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+      .calc-btn {
+        width: 100%; padding: 13px 16px;
+        background: linear-gradient(135deg, var(--accent), #3d6bef);
+        color: #fff; border: none; border-radius: 16px;
+        cursor: pointer; font-size: 14px; font-weight: 600;
+        font-family: var(--font); margin-top: 8px;
+        transition: box-shadow 0.2s ease, transform 0.2s ease, filter 0.2s ease;
+        box-shadow: 0 12px 24px rgba(40, 87, 197, 0.24);
+      }
+      .calc-btn:hover { box-shadow: 0 18px 28px rgba(40, 87, 197, 0.28); transform: translateY(-1px); filter: saturate(1.04); }
+      .calc-btn:active { transform: translateY(0); }
+      .calc-btn.secondary {
+        background: rgba(255, 255, 255, 0.84); color: var(--text2); border: 1px solid rgba(137, 154, 181, 0.26);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+      }
+      .calc-btn.secondary:hover { border-color: rgba(40, 87, 197, 0.2); color: var(--accent); box-shadow: 0 10px 20px rgba(35, 51, 84, 0.08); }
+
+      /* ── Results ── */
+      .calc-result {
+        background:
+          linear-gradient(180deg, rgba(40, 87, 197, 0.05), rgba(255, 255, 255, 0.85));
+        border: 1px solid rgba(40, 87, 197, 0.12);
+        border-radius: 18px; padding: 18px; margin-top: 18px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+      }
+      .calc-result.hidden { display: none; }
+      .result-title {
+        font-size: 11px; color: var(--text2); text-transform: uppercase;
+        letter-spacing: 0.06em; margin-bottom: 10px; font-weight: 600;
+      }
+      .result-row {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 6px 0; font-size: 13px;
+        gap: 16px;
+        border-bottom: 1px solid rgba(137, 154, 181, 0.18);
+      }
+      .result-row:last-child { border-bottom: none; }
+      .result-row .label { color: var(--text2); }
+      .result-row .value {
+        font-family: var(--mono); font-weight: 600; color: var(--text);
+      }
+      .result-row.total { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; }
+      .result-row.total .label { color: var(--text); font-weight: 600; }
+      .result-row.total .value {
+        font-size: 16px;
+        background: linear-gradient(135deg, var(--accent), #8bb4ff);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .result-row .value.red { color: var(--red); -webkit-text-fill-color: var(--red); }
+      .result-row .value.green { color: var(--green); -webkit-text-fill-color: var(--green); }
+
+      /* ── Info / Tooltip ── */
+      .info-box {
+        background: rgba(184, 139, 50, 0.08); border: 1px solid rgba(184, 139, 50, 0.15);
+        border-radius: 16px; padding: 14px 16px; margin-top: 12px;
+        font-size: 12px; color: var(--text2); line-height: 1.7;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+      }
+      .info-box strong { color: var(--gold); }
+      .tooltip-icon {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 17px; height: 17px; border-radius: 50%;
+        background: var(--accent-soft); color: var(--accent);
+        font-size: 10px; font-weight: 700; cursor: help;
+        margin-left: 4px; vertical-align: middle;
+        position: relative;
+      }
+      .tooltip-icon:hover::after {
+        content: attr(data-tip);
+        position: absolute; bottom: 120%; left: 50%; transform: translateX(-50%);
+        background: rgba(24, 35, 56, 0.94); color: #f8fbff; border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px; padding: 7px 11px; font-size: 11px;
+        white-space: nowrap; z-index: 10; pointer-events: none;
+        box-shadow: 0 14px 28px rgba(24, 35, 56, 0.24);
+      }
+
+      /* ── Apt search ── */
+      .apt-search-wrap {
+        position: relative; margin-bottom: 14px;
+      }
+      .apt-search-wrap input {
+        width: 100%; padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.92); color: var(--text);
+        border: 1px solid rgba(137, 154, 181, 0.26); border-radius: 14px;
+        font-size: 14px; font-family: var(--font);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+      .apt-search-wrap input:focus {
+        outline: none; border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-soft);
+      }
+      .apt-dropdown {
+        position: absolute; top: 100%; left: 0; right: 0;
+        background: rgba(255, 255, 255, 0.98); border: 1px solid rgba(137, 154, 181, 0.22);
+        border-radius: 18px; margin-top: 8px; max-height: 260px;
+        overflow-y: auto; z-index: 50; display: none;
+        box-shadow: 0 22px 44px rgba(35, 51, 84, 0.14);
+      }
+      .apt-dropdown.show { display: block; }
+      .apt-dropdown-item {
+        padding: 10px 14px; cursor: pointer;
+        border-bottom: 1px solid rgba(137, 154, 181, 0.12);
+        transition: background 0.15s ease;
+      }
+      .apt-dropdown-item:hover { background: rgba(40, 87, 197, 0.04); }
+      .apt-dropdown-item:last-child { border-bottom: none; }
+      .apt-dropdown-item .name { font-weight: 600; font-size: 13px; color: var(--text); }
+      .apt-dropdown-item .addr { font-size: 11px; color: var(--text3); margin-top: 2px; }
+      .apt-dropdown-item .meta { font-size: 11px; color: var(--text2); margin-top: 2px; }
+      .apt-result-box {
+        background: rgba(255, 255, 255, 0.84); border: 1px solid rgba(137, 154, 181, 0.22);
+        border-radius: 18px; padding: 16px; margin-bottom: 14px;
+        min-height: 76px; font-size: 13px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+      }
+      .apt-result-box .status { color: var(--text3); }
+      .apt-result-box .found { color: var(--green); }
+      .apt-result-box .error { color: var(--red); }
+      .price-highlight {
+        font-family: var(--mono); font-size: 28px; font-weight: 700;
+        background: linear-gradient(135deg, var(--gold), #d6a649);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      /* ── Law reference ── */
+      .law-ref {
+        background: rgba(255, 255, 255, 0.82); border: 1px solid rgba(137, 154, 181, 0.22);
+        border-radius: 20px; padding: 18px; margin-top: 20px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+      }
+      .law-ref h4 { font-size: 13px; color: var(--text2); margin-bottom: 10px; }
+      .law-ref-content {
+        font-size: 12px; color: var(--text2); max-height: 200px;
+        overflow-y: auto; line-height: 1.8; white-space: pre-wrap;
+      }
+      .law-badge {
+        display: inline-block; font-size: 10px; padding: 2px 8px;
+        border-radius: 999px; background: var(--accent-soft); color: var(--accent);
+        font-weight: 600; margin-left: 8px;
+      }
+
+      /* ── Status pill ── */
+      .status-pill {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;
+      }
+      .status-pill.ok { background: var(--green-soft); color: var(--green); }
+      .status-pill.warn { background: var(--gold-soft); color: var(--gold); }
+      .status-pill.err { background: var(--red-soft); color: var(--red); }
+
+      /* ── Responsive ── */
+      @media (max-width: 768px) {
+        .calc-grid { grid-template-columns: 1fr; }
+        .field-row, .field-row-3 { grid-template-columns: 1fr; }
+        .container { padding: 12px; }
+        header { padding: 12px; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+        .tabs { gap: 6px; margin-left: 0; }
+        .tab { padding: 4px 8px; font-size: 12px; }
+        .guide-banner { padding: 18px 18px 20px; border-radius: 20px; }
+        .guide-banner h2 { font-size: 18px; }
+        .back-link { margin-left: 0; }
+        .calc-card { padding: 20px; border-radius: 20px; }
+        .calc-card.full { grid-column: auto; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a class="logo" href="/">2026 세금 시뮬레이터</a>
+      <span class="logo-sub">부동산 초보도 쉽게</span>
+      <div class="tabs">
+        <button class="tab active" data-tab="acquire" onclick="switchCalcTab('acquire')">취득세</button>
+        <button class="tab" data-tab="capital" onclick="switchCalcTab('capital')">양도소득세</button>
+        <button class="tab" data-tab="holding" onclick="switchCalcTab('holding')">보유세</button>
+        <button class="tab" data-tab="roi" onclick="switchCalcTab('roi')">투자수익률</button>
+        <button class="tab" data-tab="loan" onclick="switchCalcTab('loan')">대출상환</button>
+      </div>
+      <a class="back-link" href="/">메인 대시보드로</a>
+    </header>
+
+    <div class="container">
+
+      <!-- ═══════════ 취득세 ═══════════ -->
+      <div id="tabAcquire" class="tab-content active">
+
+        <div class="guide-banner">
+          <h2>집을 살 때 내는 세금, 취득세</h2>
+          <p>
+            아파트를 매수하면 매매가의 1~12%를 세금으로 냅니다.
+            주택 수가 많을수록, 조정대상지역일수록 세율이 올라갑니다.
+            아래에 아파트 이름을 검색하면 단지 정보가 자동으로 채워집니다.
+          </p>
+          <div class="step-chips">
+            <span class="step-chip"><span class="num">1</span> 아파트 검색 (선택)</span>
+            <span class="step-chip"><span class="num">2</span> 매매가 입력</span>
+            <span class="step-chip"><span class="num">3</span> 조건 설정</span>
+            <span class="step-chip"><span class="num">4</span> 계산하기 클릭</span>
+          </div>
+        </div>
+
+        <div class="calc-grid">
+          <div class="calc-card">
+            <h3>취득세 계산기</h3>
+
+            <!-- 실거래 + 공시지가 검색 -->
+            <div class="calc-field">
+              <label>아파트 실거래가 검색 (선택) <span class="tooltip-icon" data-tip="지역과 아파트명을 입력하면 최근 실거래가와 공시지가를 자동으로 조회합니다.">?</span></label>
+              <div class="field-row" style="margin-bottom:8px;">
+                <select id="acqSido" onchange="onSidoChange('acq')">
+                  <option value="">시/도 선택</option>
+                </select>
+                <select id="acqSigungu">
+                  <option value="">시/군/구 선택</option>
+                </select>
+              </div>
+              <div class="apt-search-wrap">
+                <input type="text" id="acqAptSearch" placeholder="아파트명 입력 (예: 은마, 래미안)" />
+                <div id="acqAptDropdown" class="apt-dropdown"></div>
+              </div>
+              <button class="calc-btn secondary" onclick="searchAptTrade('acq')" style="margin-top:0;">실거래 + 공시지가 조회</button>
+              <div id="acqAptResult" class="apt-result-box" style="margin-top:10px;">
+                <span class="status">지역을 선택하고 아파트명을 입력한 뒤 조회 버튼을 누르세요.</span>
+              </div>
+            </div>
+
+            <div class="calc-field">
+              <label>매매가 (만원) <span class="tooltip-icon" data-tip="실제 매매 계약가격을 만원 단위로 입력하세요. 예: 9억 = 90000">?</span></label>
+              <input type="number" id="acqPrice" value="90000" />
+              <div class="hint">예: 5억 = 50000, 9억 = 90000, 15억 = 150000</div>
+            </div>
+            <div class="field-row">
+              <div class="calc-field">
+                <label>보유 주택 수 (취득 후)</label>
+                <select id="acqHouseCount">
+                  <option value="1">1주택 (첫 집 매수)</option>
+                  <option value="2">2주택</option>
+                  <option value="3">3주택</option>
+                  <option value="4">4주택 이상 / 법인</option>
+                </select>
+              </div>
+              <div class="calc-field">
+                <label>조정대상지역 여부 <span class="tooltip-icon" data-tip="서울 대부분, 과천, 세종 등이 조정대상지역입니다. 2주택부터 중과세율이 적용됩니다.">?</span></label>
+                <select id="acqRegulated">
+                  <option value="no">비조정지역</option>
+                  <option value="yes">조정대상지역 (서울 등)</option>
+                </select>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="calc-field">
+                <label>전용면적 (m2)</label>
+                <input type="number" id="acqArea" value="84" />
+                <div class="hint">85m2 초과 시 농어촌특별세 추가</div>
+              </div>
+              <div class="calc-field">
+                <label>주택 유형</label>
+                <select id="acqType">
+                  <option value="apt">아파트 / 연립</option>
+                  <option value="officetel">오피스텔</option>
+                </select>
+              </div>
+            </div>
+            <button class="calc-btn" onclick="calcAcquisitionTax()">취득세 계산하기</button>
+            <div id="acqResult" class="calc-result hidden"></div>
+          </div>
+
+          <div class="calc-card">
+            <h3>취득세율 한눈에 보기</h3>
+            <div class="info-box">
+              <strong>1주택 (비조정지역)</strong><br>
+              6억 이하: 1% | 6~9억: 1~3% | 9억 초과: 3%<br><br>
+              <strong>2주택</strong><br>
+              비조정: 1~3% (일반세율) | 조정: 8%<br><br>
+              <strong>3주택</strong><br>
+              비조정: 8% | 조정: 12%<br><br>
+              <strong>4주택 이상 / 법인</strong><br>
+              12% (지역 무관)<br><br>
+              <strong>부가세 (자동 계산됨)</strong><br>
+              지방교육세: 취득세의 10%<br>
+              농어촌특별세: 전용 85m2 초과 시 취득세의 20%
+            </div>
+            <div class="info-box" style="margin-top:10px; background:rgba(79,124,255,0.06); border-color:rgba(79,124,255,0.15);">
+              <strong style="color:var(--accent);">초보자 팁</strong><br>
+              생애 최초 주택 구매 시 취득세 감면 혜택이 있을 수 있습니다 (수도권 1.5억, 비수도권 1억 이하 면제 등).<br>
+              정확한 감면은 관할 구청에 문의하세요.
+            </div>
+            <div class="law-ref">
+              <h4>관련 법령 <span class="law-badge">지방세법 제11조, 제13조의2</span></h4>
+              <div id="acqLawRef" class="law-ref-content">계산 후 자동으로 관련 법령이 표시됩니다.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ 양도소득세 ═══════════ -->
+      <div id="tabCapital" class="tab-content">
+
+        <div class="guide-banner">
+          <h2>집을 팔 때 내는 세금, 양도소득세</h2>
+          <p>
+            아파트를 팔아서 이익이 생기면 양도소득세를 냅니다.
+            1주택자는 2년 이상 보유하면 12억까지 비과세! 오래 보유할수록 공제율도 올라갑니다.
+          </p>
+          <div class="step-chips">
+            <span class="step-chip"><span class="num">1</span> 산 가격 입력</span>
+            <span class="step-chip"><span class="num">2</span> 팔 가격 입력</span>
+            <span class="step-chip"><span class="num">3</span> 보유/거주기간</span>
+            <span class="step-chip"><span class="num">4</span> 비과세 자동 판단</span>
+          </div>
+        </div>
+
+        <div class="calc-grid">
+          <div class="calc-card">
+            <h3>양도소득세 계산기</h3>
+            <div class="field-row">
+              <div class="calc-field">
+                <label>취득가 (만원) <span class="tooltip-icon" data-tip="처음 매수할 때 지불한 가격">?</span></label>
+                <input type="number" id="cgAcqPrice" value="80000" />
+              </div>
+              <div class="calc-field">
+                <label>양도가 (만원) <span class="tooltip-icon" data-tip="이번에 팔려는 가격">?</span></label>
+                <input type="number" id="cgSellPrice" value="120000" />
+              </div>
+            </div>
+            <div class="field-row-3">
+              <div class="calc-field">
+                <label>보유 기간 (년)</label>
+                <input type="number" id="cgHoldYears" value="5" step="1" />
+              </div>
+              <div class="calc-field">
+                <label>거주 기간 (년) <span class="tooltip-icon" data-tip="실제 전입신고 후 거주한 기간. 조정지역 1주택 비과세에는 2년 거주 필요">?</span></label>
+                <input type="number" id="cgLiveYears" value="3" step="1" />
+              </div>
+              <div class="calc-field">
+                <label>필요경비 (만원) <span class="tooltip-icon" data-tip="취득세, 중개수수료, 인테리어 비용 등 증빙 가능한 비용">?</span></label>
+                <input type="number" id="cgExpense" value="500" />
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="calc-field">
+                <label>주택 수 (양도 시점)</label>
+                <select id="cgHouseCount">
+                  <option value="1">1주택 (비과세 요건 확인)</option>
+                  <option value="2">2주택</option>
+                  <option value="3">3주택 이상</option>
+                </select>
+              </div>
+              <div class="calc-field">
+                <label>조정대상지역</label>
+                <select id="cgRegulated">
+                  <option value="no">비조정지역</option>
+                  <option value="yes">조정대상지역</option>
+                </select>
+              </div>
+            </div>
+            <button class="calc-btn" onclick="calcCapitalGainsTax()">양도소득세 계산하기</button>
+            <div id="cgResult" class="calc-result hidden"></div>
+          </div>
+
+          <div class="calc-card">
+            <h3>양도소득세 핵심 정리</h3>
+            <div class="info-box">
+              <strong>1주택 비과세 조건 (가장 중요!)</strong><br>
+              - 2년 이상 보유 (조정지역: +2년 거주)<br>
+              - 양도가 12억 이하이면 세금 0원<br>
+              - 12억 초과분만 과세<br><br>
+              <strong>장기보유특별공제 (오래 보유할수록 유리)</strong><br>
+              일반: 3년부터 연 2% (최대 30%)<br>
+              1주택: 보유 연 4% + 거주 연 4% (최대 80%)<br><br>
+              <strong>다주택 중과 (2주택 이상 주의!)</strong><br>
+              2주택 조정: +20%p | 3주택: +20~30%p<br>
+              중과 시 장기보유특별공제 미적용
+            </div>
+            <div class="info-box" style="margin-top:10px; background:rgba(79,124,255,0.06); border-color:rgba(79,124,255,0.15);">
+              <strong style="color:var(--accent);">초보자 팁</strong><br>
+              1주택자라면 2년 이상 보유(조정지역은 거주도)만 하면 12억까지 세금이 없습니다.
+              이것이 부동산에서 가장 큰 절세 혜택입니다.
+            </div>
+            <div class="law-ref">
+              <h4>관련 법령 <span class="law-badge">소득세법 제89조, 제95조, 제104조</span></h4>
+              <div id="cgLawRef" class="law-ref-content">계산 후 자동으로 관련 법령이 표시됩니다.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ 보유세 ═══════════ -->
+      <div id="tabHolding" class="tab-content">
+
+        <div class="guide-banner">
+          <h2>매년 내는 세금, 보유세 (재산세 + 종부세)</h2>
+          <p>
+            집을 보유하는 동안 매년 재산세를 내고, 공시가격이 일정 기준을 넘으면 종합부동산세도 추가됩니다.
+            아파트를 검색하면 공시가격이 자동으로 채워집니다.
+          </p>
+          <div class="step-chips">
+            <span class="step-chip"><span class="num">1</span> 아파트 검색으로 공시가 조회</span>
+            <span class="step-chip"><span class="num">2</span> 또는 직접 공시가격 입력</span>
+            <span class="step-chip"><span class="num">3</span> 주택 수/지역 선택</span>
+          </div>
+        </div>
+
+        <div class="calc-grid">
+          <div class="calc-card">
+            <h3>재산세 + 종합부동산세 계산기</h3>
+
+            <!-- 실거래 + 공시지가 검색 -->
+            <div class="calc-field">
+              <label>아파트 검색으로 공시가 조회 (선택) <span class="tooltip-icon" data-tip="실거래 데이터로 주소를 찾고, V-World에서 공시지가를 자동 조회합니다.">?</span></label>
+              <div class="field-row" style="margin-bottom:8px;">
+                <select id="holdSido" onchange="onSidoChange('hold')">
+                  <option value="">시/도 선택</option>
+                </select>
+                <select id="holdSigungu">
+                  <option value="">시/군/구 선택</option>
+                </select>
+              </div>
+              <div class="apt-search-wrap">
+                <input type="text" id="holdAptSearch" placeholder="아파트명 입력 (예: 은마, 래미안)" />
+                <div id="holdAptDropdown" class="apt-dropdown"></div>
+              </div>
+              <button class="calc-btn secondary" onclick="searchAptTrade('hold')" style="margin-top:0;">실거래 + 공시지가 조회</button>
+              <div id="holdAptResult" class="apt-result-box" style="margin-top:10px;">
+                <span class="status">지역을 선택하고 아파트명을 입력한 뒤 조회 버튼을 누르세요.</span>
+              </div>
+            </div>
+
+            <div class="field-row">
+              <div class="calc-field">
+                <label>공시가격 (만원) <span class="tooltip-icon" data-tip="국토부 발표 공동주택 공시가격. 시세의 약 60~70% 수준입니다.">?</span></label>
+                <input type="number" id="holdPublicPrice" value="90000" />
+                <div class="hint">시세의 약 60~70%. 국토부 부동산 공시가격 알리미에서 확인 가능</div>
+              </div>
+              <div class="calc-field">
+                <label>보유 주택 수</label>
+                <select id="holdHouseCount">
+                  <option value="1">1주택</option>
+                  <option value="2">2주택</option>
+                  <option value="3">3주택 이상</option>
+                </select>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="calc-field">
+                <label>공정시장가액비율 (%) <span class="tooltip-icon" data-tip="2026년 기준 60%. 정부가 매년 조정하는 비율로, 과세표준을 결정합니다.">?</span></label>
+                <input type="number" id="holdFairRatio" value="60" />
+              </div>
+              <div class="calc-field">
+                <label>조정대상지역</label>
+                <select id="holdRegulated">
+                  <option value="no">비조정지역</option>
+                  <option value="yes">조정대상지역</option>
+                </select>
+              </div>
+            </div>
+            <button class="calc-btn" onclick="calcHoldingTax()">보유세 계산하기</button>
+            <div id="holdResult" class="calc-result hidden"></div>
+          </div>
+
+          <div class="calc-card">
+            <h3>보유세 기준표</h3>
+            <div class="info-box">
+              <strong>재산세 (매년 7/9월 납부)</strong><br>
+              6,000만 이하: 0.1% | ~1.5억: 0.15%<br>
+              ~3억: 0.25% | 3억 초과: 0.4%<br><br>
+              <strong>종합부동산세 (매년 12월)</strong><br>
+              1주택: 공시가 12억 초과분 과세<br>
+              다주택: 공시가 합산 9억 초과분 과세<br><br>
+              <strong>종부세율 (1주택)</strong><br>
+              3억 이하: 0.5% | ~6억: 0.7% | ~12억: 1.0%<br>
+              ~25억: 1.3% | ~50억: 1.5% | ~94억: 2.0%<br><br>
+              <strong>종부세율 (다주택/조정)</strong><br>
+              3억 이하: 1.2% | ~6억: 1.6% | ~12억: 2.2%<br>
+              ~25억: 3.6% | ~50억: 5.0% | 50억 초과: 6.0%
+            </div>
+            <div class="info-box" style="margin-top:10px; background:rgba(79,124,255,0.06); border-color:rgba(79,124,255,0.15);">
+              <strong style="color:var(--accent);">초보자 팁</strong><br>
+              공시가격 12억(시세 약 17~20억) 이하 1주택자는 종부세 대상이 아닙니다.
+              대부분의 1주택자는 재산세만 납부합니다.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ 투자수익률 ═══════════ -->
+      <div id="tabROI" class="tab-content">
+
+        <div class="guide-banner">
+          <h2>내 투자, 얼마나 벌었을까?</h2>
+          <p>
+            갭투자(전세 끼고 매수)와 자기자본 100% 투자를 비교해보세요.
+            레버리지 효과가 수익률에 어떤 영향을 미치는지 한눈에 확인할 수 있습니다.
+          </p>
+        </div>
+
+        <div class="calc-grid">
+          <div class="calc-card">
+            <h3>아파트 투자수익률 분석</h3>
+            <div class="field-row">
+              <div class="calc-field">
+                <label>매입가 (만원)</label>
+                <input type="number" id="roiBuyPrice" value="90000" />
+              </div>
+              <div class="calc-field">
+                <label>예상 매도가 (만원)</label>
+                <input type="number" id="roiSellPrice" value="120000" />
+              </div>
+            </div>
+            <div class="field-row-3">
+              <div class="calc-field">
+                <label>보유 기간 (년)</label>
+                <input type="number" id="roiYears" value="5" />
+              </div>
+              <div class="calc-field">
+                <label>전세 보증금 (만원) <span class="tooltip-icon" data-tip="갭투자의 핵심. 전세금이 클수록 내 투자금은 줄어듭니다.">?</span></label>
+                <input type="number" id="roiDeposit" value="50000" />
+              </div>
+              <div class="calc-field">
+                <label>대출금 (만원)</label>
+                <input type="number" id="roiLoan" value="0" />
+              </div>
+            </div>
+            <div class="field-row-3">
+              <div class="calc-field">
+                <label>월세 수입 (만원/월)</label>
+                <input type="number" id="roiMonthlyRent" value="0" />
+              </div>
+              <div class="calc-field">
+                <label>대출 이자율 (%)</label>
+                <input type="number" id="roiLoanRate" value="4.0" step="0.1" />
+              </div>
+              <div class="calc-field">
+                <label>연간 유지비 (만원) <span class="tooltip-icon" data-tip="관리비, 수선비, 재산세 등 연간 보유 비용">?</span></label>
+                <input type="number" id="roiMaintenance" value="200" />
+              </div>
+            </div>
+            <button class="calc-btn" onclick="calcROI()">수익률 분석하기</button>
+            <div id="roiResult" class="calc-result hidden"></div>
+          </div>
+
+          <div class="calc-card">
+            <h3>갭투자 vs 자기자본 비교</h3>
+            <div id="roiCompare" class="calc-result" style="border:none;background:none;padding:0;margin:0;">
+              <div style="color:var(--text2);font-size:13px;text-align:center;padding:40px 0;">
+                왼쪽에서 분석을 실행하면 비교 결과가 표시됩니다.
+              </div>
+            </div>
+            <div class="info-box" style="margin-top:16px;">
+              <strong>갭투자란?</strong><br>
+              전세를 끼고 아파트를 매수하는 방법입니다.<br>
+              예: 9억 아파트 - 5억 전세 = 4억만 내 돈으로 투자<br>
+              시세가 오르면 수익률이 높지만, 하락 시 손실도 큽니다.<br><br>
+              <strong>자기자본 투자</strong><br>
+              전액 현금으로 매수하는 안전한 방법입니다.
+              수익률은 낮지만 역전세 리스크가 없습니다.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ 대출상환 ═══════════ -->
+      <div id="tabLoan" class="tab-content">
+
+        <div class="guide-banner">
+          <h2>대출 갚는 방법, 뭐가 다를까?</h2>
+          <p>
+            같은 금액을 빌려도 상환 방식에 따라 이자가 크게 달라집니다.
+            원리금균등은 매월 동일 금액, 원금균등은 처음에 많고 점점 줄어들며,
+            만기일시는 이자만 내다가 마지막에 원금을 갚습니다.
+          </p>
+        </div>
+
+        <div class="calc-grid">
+          <div class="calc-card">
+            <h3>대출 상환 계산기</h3>
+            <div class="field-row">
+              <div class="calc-field">
+                <label>대출 원금 (만원)</label>
+                <input type="number" id="loanPrincipal" value="30000" />
+                <div class="hint">예: 3억 = 30000</div>
+              </div>
+              <div class="calc-field">
+                <label>연 이자율 (%)</label>
+                <input type="number" id="loanRate" value="3.5" step="0.1" />
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="calc-field">
+                <label>상환 기간 (년)</label>
+                <input type="number" id="loanYears" value="30" />
+              </div>
+              <div class="calc-field">
+                <label>상환 방식 <span class="tooltip-icon" data-tip="원리금균등: 매월 같은 금액 | 원금균등: 처음 많고 점점 감소 | 만기일시: 이자만 내다 마지막에 원금 상환">?</span></label>
+                <select id="loanMethod">
+                  <option value="equal">원리금균등 (가장 일반적)</option>
+                  <option value="principal">원금균등 (총이자 절약)</option>
+                  <option value="bullet">만기일시 (이자만 납부)</option>
+                </select>
+              </div>
+            </div>
+            <button class="calc-btn" onclick="calcLoan()">대출상환 계산하기</button>
+            <div id="loanResult" class="calc-result hidden"></div>
+          </div>
+
+          <div class="calc-card">
+            <h3>복리 투자 계산기</h3>
+            <div class="field-row">
+              <div class="calc-field">
+                <label>초기 투자금 (만원)</label>
+                <input type="number" id="compInitial" value="5000" />
+              </div>
+              <div class="calc-field">
+                <label>월 적립금 (만원)</label>
+                <input type="number" id="compMonthly" value="100" />
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="calc-field">
+                <label>연 수익률 (%)</label>
+                <input type="number" id="compRate" value="7" step="0.5" />
+              </div>
+              <div class="calc-field">
+                <label>투자 기간 (년)</label>
+                <input type="number" id="compYears" value="20" />
+              </div>
+            </div>
+            <button class="calc-btn" onclick="calcCompound()">복리 계산하기</button>
+            <div id="compResult" class="calc-result hidden"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <script>
+      // ══════════════════════════════════════════
+      // TAB SWITCHING
+      // ══════════════════════════════════════════
+      function switchCalcTab(tab) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+        const map = { acquire: 'tabAcquire', capital: 'tabCapital', holding: 'tabHolding', roi: 'tabROI', loan: 'tabLoan' };
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.getElementById(map[tab]).classList.add('active');
+      }
+
+      // ══════════════════════════════════════════
+      // UTILITIES
+      // ══════════════════════════════════════════
+      function n(id) { return Number(document.getElementById(id).value) || 0; }
+      function v(id) { return document.getElementById(id).value; }
+      function fmt(val) {
+        if (val >= 10000) return (val / 10000).toFixed(val % 10000 === 0 ? 0 : 1) + '억';
+        return val.toLocaleString('ko-KR') + '만';
+      }
+      function fmtWon(val) { return val.toLocaleString('ko-KR') + '만원'; }
+      function fmtPct(val) { return val.toFixed(2) + '%'; }
+      function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+
+      function renderResult(id, title, rows) {
+        const el = document.getElementById(id);
+        el.classList.remove('hidden');
+        let html = `<div class="result-title">${esc(title)}</div>`;
+        for (const row of rows) {
+          const cls = row.total ? ' total' : '';
+          const valCls = row.color === 'red' ? ' red' : row.color === 'green' ? ' green' : '';
+          html += `<div class="result-row${cls}"><span class="label">${esc(row.label)}</span><span class="value${valCls}">${esc(row.value)}</span></div>`;
+        }
+        el.innerHTML = html;
+      }
+
+      // ══════════════════════════════════════════
+      // 아파트 검색 (공공 실거래 API + V-World 공시지가)
+      // ══════════════════════════════════════════
+      const API_BASE = location.protocol === 'file:' ? 'http://localhost:3000' : '';
+      let _regionData = null;
+
+      // 지역 코드 로드 (시/도 → 시/군/구)
+      async function loadRegions() {
+        if (_regionData) return;
+        try {
+          const res = await fetch(`${API_BASE}/api/regions`);
+          _regionData = await res.json();
+          for (const prefix of ['acq', 'hold']) {
+            const sidoEl = document.getElementById(prefix + 'Sido');
+            if (!sidoEl) continue;
+            (_regionData.sidoOptions || []).forEach(opt => {
+              const o = document.createElement('option');
+              o.value = opt.code || opt.value;
+              o.textContent = opt.name || opt.label;
+              sidoEl.appendChild(o);
+            });
+          }
+        } catch (e) {
+          console.error('지역 데이터 로드 실패:', e);
+        }
+      }
+
+      function onSidoChange(prefix) {
+        const sidoVal = document.getElementById(prefix + 'Sido').value;
+        const sigunguEl = document.getElementById(prefix + 'Sigungu');
+        sigunguEl.innerHTML = '<option value="">시/군/구 선택</option>';
+        if (!sidoVal || !_regionData) return;
+        const options = _regionData.sigunguOptionsBySido?.[sidoVal] || [];
+        options.forEach(opt => {
+          const o = document.createElement('option');
+          o.value = opt.code || opt.value;
+          o.textContent = opt.name || opt.label;
+          sigunguEl.appendChild(o);
+        });
+      }
+
+      // 실거래 검색 + V-World 공시지가
+      async function searchAptTrade(prefix) {
+        const regionCode = document.getElementById(prefix + 'Sigungu').value;
+        const aptName = document.getElementById(prefix + 'AptSearch').value.trim();
+        const resultBox = document.getElementById(prefix + 'AptResult');
+        const isAcq = prefix === 'acq';
+
+        if (!regionCode) {
+          resultBox.innerHTML = '<span class="error">시/도와 시/군/구를 선택해주세요.</span>';
+          return;
+        }
+        if (!aptName) {
+          resultBox.innerHTML = '<span class="error">아파트명을 입력해주세요.</span>';
+          return;
+        }
+
+        resultBox.innerHTML = '<span class="status">실거래 데이터 조회 중...</span>';
+
+        try {
+          // 최근 6개월 거래 데이터 조회
+          const now = new Date();
+          let trades = [];
+          let searchYM = '';
+          for (let m = 0; m < 6 && trades.length === 0; m++) {
+            const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+            const dealYM = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+            const tradeRes = await fetch(`${API_BASE}/api/apt-trade?LAWD_CD=${regionCode}&DEAL_YMD=${dealYM}`);
+            const tradeData = await tradeRes.json();
+            const items = tradeData.items || tradeData.data || [];
+            trades = items.filter(it => {
+              const n = it.apt || it.aptNm || it.name || '';
+              return n.includes(aptName);
+            });
+            if (trades.length > 0) { searchYM = dealYM; break; }
+          }
+
+          if (trades.length === 0) {
+            resultBox.innerHTML = `<span class="error">"${esc(aptName)}" 최근 6개월 거래 내역이 없습니다. 이름을 정확히 입력해주세요.</span>`;
+            return;
+          }
+
+          // 가장 최근(비싼) 거래 정보
+          trades.sort((a, b) => (b.price || 0) - (a.price || 0));
+          const latest = trades[0];
+          const name = latest.apt || latest.aptNm || latest.name || aptName;
+          const priceMW = Number(latest.price || 0);
+          const area = Number(latest.area || latest.excluUseAr || 0);
+          const dong = latest.dong || latest.umdNm || '';
+          const bun = [latest.bun, latest.ji].filter(Boolean).join('-');
+          const floor = latest.floor || '';
+          const tradeDate = latest.date || '';
+          const buildYear = latest.buildYear || '';
+
+          let html = '<div class="found">';
+          html += `<div style="margin-bottom:8px;"><span class="status-pill ok">실거래 조회 성공</span> <span style="color:var(--text3);font-size:11px;margin-left:4px;">${trades.length}건 중 최근 거래</span></div>`;
+          html += `<div style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text);">${esc(name)}</div>`;
+          html += `<div style="color:var(--text2);font-size:12px;margin-bottom:6px;">${esc(dong)} ${esc(bun)}</div>`;
+          html += `<div style="margin-bottom:4px;">최근 거래가: <span class="price-highlight">${fmt(priceMW)}</span></div>`;
+          html += `<div style="color:var(--text2);font-size:12px;margin-bottom:4px;">전용면적: ${area}m2 (${Math.round(area / 3.305)}평) | ${floor}층 | ${tradeDate} 거래</div>`;
+          if (buildYear) {
+            html += `<div style="color:var(--text3);font-size:11px;margin-bottom:8px;">건축년도: ${esc(String(buildYear))}년</div>`;
+          }
+
+          // 자동 채우기
+          if (isAcq) {
+            document.getElementById('acqPrice').value = priceMW;
+            if (area > 0) document.getElementById('acqArea').value = Math.round(area);
+          }
+
+          // V-World 공시지가 조회 시도
+          if (dong) {
+            html += '<div style="color:var(--text3);font-size:11px;margin-top:4px;">공시지가 조회 중...</div>';
+            resultBox.innerHTML = html + '</div>';
+
+            try {
+              const sido = document.getElementById(prefix + 'Sido');
+              const sidoLabel = sido.options[sido.selectedIndex]?.text || '';
+              const sigungu = document.getElementById(prefix + 'Sigungu');
+              const sigunguLabel = sigungu.options[sigungu.selectedIndex]?.text || '';
+              const addrQuery = `${sidoLabel} ${sigunguLabel} ${dong} ${bun}`.trim();
+              const addrRes = await fetch(`${API_BASE}/api/vworld/address?q=${encodeURIComponent(addrQuery)}`);
+              const addrData = await addrRes.json();
+              const pnu = addrData?.data?.response?.result?.structure?.level4LC;
+
+              if (pnu) {
+                // 2025 공시지가 조회 (2026이 아직 없을 수 있음)
+                let landData = null;
+                for (const yr of ['2025', '2024']) {
+                  const lRes = await fetch(`${API_BASE}/api/vworld/land-price?pnu=${encodeURIComponent(pnu)}&year=${yr}`);
+                  landData = await lRes.json();
+                  const fields = landData?.data?.indvdLandPrices?.field;
+                  if (fields && (Array.isArray(fields) ? fields.length > 0 : true)) break;
+                  landData = null;
+                }
+
+                if (landData) {
+                  const fields = landData.data.indvdLandPrices.field;
+                  const field = Array.isArray(fields) ? fields[0] : fields;
+                  const landPrice = Number(field?.pblntfPclnd || 0);
+                  if (landPrice > 0) {
+                    html += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">`;
+                    html += `<div style="color:var(--text2);font-size:12px;margin-bottom:4px;">개별공시지가 (${field.stdrYear || ''}년)</div>`;
+                    html += `<div>공시지가: <span style="font-family:var(--mono);color:var(--gold);font-weight:600;">${landPrice.toLocaleString('ko-KR')}원/m2</span></div>`;
+                    html += `</div>`;
+
+                    // 보유세 탭이면 공시가격 추정 (공시지가 x 적당한 면적 비율은 불가 → 시세의 69% 추정)
+                    if (!isAcq) {
+                      const estimatedPublic = Math.round(priceMW * 0.69);
+                      document.getElementById('holdPublicPrice').value = estimatedPublic;
+                      html += `<div style="color:var(--text3);font-size:11px;margin-top:4px;">공동주택 공시가격 추정: 약 ${fmtWon(estimatedPublic)} (시세의 69%)</div>`;
+                    }
+                  }
+                }
+              }
+            } catch {
+              html += '<div style="color:var(--text3);font-size:11px;">공시지가 조회에 실패했지만 실거래 정보는 정상입니다.</div>';
+            }
+          }
+
+          html += '</div>';
+          resultBox.innerHTML = html;
+
+        } catch (e) {
+          resultBox.innerHTML = `<span class="error">조회 실패: ${esc(e.message)}<br>서버가 실행 중인지 확인하세요 (http://localhost:3000)</span>`;
+        }
+      }
+
+      // 페이지 로드 시 지역 데이터 가져오기
+      loadRegions();
+
+      // ══════════════════════════════════════════
+      // 취득세 CALCULATOR
+      // ══════════════════════════════════════════
+      function calcAcquisitionTax() {
+        const price = n('acqPrice');
+        const houses = v('acqHouseCount');
+        const regulated = v('acqRegulated') === 'yes';
+        const area = n('acqArea');
+
+        if (price <= 0) {
+          renderResult('acqResult', '입력 오류', [{ label: '매매가를 입력해주세요', value: '0 이상 필요', color: 'red' }]);
+          return;
+        }
+
+        let rate;
+        if (houses === '4') {
+          rate = 12;
+        } else if (houses === '3') {
+          rate = regulated ? 12 : 8;
+        } else if (houses === '2') {
+          rate = regulated ? 8 : getOneHouseRate(price);
+        } else {
+          rate = getOneHouseRate(price);
+        }
+
+        const acqTax = Math.round(price * rate / 100);
+        const eduTax = Math.round(acqTax * 0.1);
+        const ruralTax = area > 85 ? Math.round(acqTax * 0.2) : 0;
+        const totalTax = acqTax + eduTax + ruralTax;
+
+        renderResult('acqResult', '취득세 계산 결과', [
+          { label: '매매가', value: fmtWon(price) },
+          { label: '적용 세율', value: fmtPct(rate) },
+          { label: '취득세', value: fmtWon(acqTax) },
+          { label: '지방교육세 (10%)', value: fmtWon(eduTax) },
+          { label: `농어촌특별세 ${area > 85 ? '(20%)' : '(면제: 85m2 이하)'}`, value: fmtWon(ruralTax) },
+          { label: '총 취득 비용', value: fmtWon(totalTax), total: true, color: 'red' },
+          { label: '실효세율', value: fmtPct(totalTax / price * 100) },
+        ]);
+
+        fetchLawRef('acqLawRef', '지방세법 취득세');
+      }
+
+      function getOneHouseRate(price) {
+        if (price <= 60000) return 1;
+        if (price <= 90000) return 1 + (price - 60000) / 30000 * 2;
+        return 3;
+      }
+
+      // ══════════════════════════════════════════
+      // 양도소득세 CALCULATOR
+      // ══════════════════════════════════════════
+      const CG_BRACKETS = [
+        { limit: 1400, rate: 6, deduction: 0 },
+        { limit: 5000, rate: 15, deduction: 126 },
+        { limit: 8800, rate: 24, deduction: 576 },
+        { limit: 15000, rate: 35, deduction: 1544 },
+        { limit: 30000, rate: 38, deduction: 1994 },
+        { limit: 50000, rate: 40, deduction: 2594 },
+        { limit: 100000, rate: 42, deduction: 3594 },
+        { limit: Infinity, rate: 45, deduction: 6594 },
+      ];
+
+      function calcCapitalGainsTax() {
+        const acqPrice = n('cgAcqPrice');
+        const sellPrice = n('cgSellPrice');
+        const holdYears = n('cgHoldYears');
+        const liveYears = n('cgLiveYears');
+        const expense = n('cgExpense');
+        const houses = v('cgHouseCount');
+        const regulated = v('cgRegulated') === 'yes';
+
+        const gain = sellPrice - acqPrice - expense;
+        if (gain <= 0) {
+          renderResult('cgResult', '양도소득세 계산 결과', [
+            { label: '양도차익', value: fmtWon(gain), color: 'green' },
+            { label: '결과', value: '이익이 없으므로 세금 없음', total: true, color: 'green' },
+          ]);
+          return;
+        }
+
+        let taxableGain = gain;
+        let exempt = false;
+        const basicDeduction = 250;
+
+        if (houses === '1') {
+          const meetsHold = holdYears >= 2;
+          const meetsLive = !regulated || liveYears >= 2;
+          if (meetsHold && meetsLive) {
+            if (sellPrice <= 120000) {
+              renderResult('cgResult', '양도소득세 계산 결과', [
+                { label: '양도차익', value: fmtWon(gain) },
+                { label: '비과세 요건', value: '충족! (1주택, 2년 보유' + (regulated ? '+2년 거주' : '') + ')', color: 'green' },
+                { label: '양도가 12억 이하', value: '해당', color: 'green' },
+                { label: '양도소득세', value: '0원 (전액 비과세)', total: true, color: 'green' },
+              ]);
+              fetchLawRef('cgLawRef', '소득세법 양도소득 비과세');
+              return;
+            }
+            const taxableRatio = (sellPrice - 120000) / sellPrice;
+            taxableGain = Math.round(gain * taxableRatio);
+            exempt = true;
+          }
+        }
+
+        let lthdRate = 0;
+        if (holdYears >= 3 && houses === '1') {
+          const holdRate = Math.min(holdYears, 10) * 4;
+          const liveRate = Math.min(liveYears, 10) * 4;
+          lthdRate = Math.min(holdRate + liveRate, 80);
+        } else if (holdYears >= 3) {
+          lthdRate = Math.min(holdYears * 2, 30);
+        }
+
+        let surcharge = 0;
+        if (houses === '2' && regulated) {
+          surcharge = 20; lthdRate = 0;
+        } else if (houses === '3') {
+          surcharge = regulated ? 30 : 20; lthdRate = 0;
+        }
+
+        const lthdDeduction = Math.round(taxableGain * lthdRate / 100);
+        const taxBase = Math.max(taxableGain - lthdDeduction - basicDeduction, 0);
+
+        const bracket = CG_BRACKETS.find(b => taxBase <= b.limit) || CG_BRACKETS[CG_BRACKETS.length - 1];
+        const effectiveRate = bracket.rate + surcharge;
+        const computedTax = Math.round(taxBase * effectiveRate / 100 - bracket.deduction);
+        const cgTax = Math.max(computedTax, 0);
+        const localTax = Math.round(cgTax * 0.1);
+
+        const rows = [
+          { label: '양도차익 (매도가 - 매입가 - 경비)', value: fmtWon(gain) },
+        ];
+        if (exempt) {
+          rows.push({ label: '12억 초과 과세분', value: fmtWon(taxableGain) });
+          rows.push({ label: '12억 이하 비과세분', value: fmtWon(gain - taxableGain), color: 'green' });
+        }
+        rows.push(
+          { label: `장기보유특별공제 (${lthdRate}%)`, value: lthdRate > 0 ? '-' + fmtWon(lthdDeduction) : '해당 없음' },
+          { label: '기본공제', value: '-' + fmtWon(basicDeduction) },
+          { label: '과세표준', value: fmtWon(taxBase) },
+          { label: `세율 (${bracket.rate}%${surcharge ? ` + 중과 ${surcharge}%` : ''})`, value: fmtPct(effectiveRate) },
+          { label: '양도소득세', value: fmtWon(cgTax), color: 'red' },
+          { label: '지방소득세 (10%)', value: fmtWon(localTax) },
+          { label: '총 세금', value: fmtWon(cgTax + localTax), total: true, color: 'red' },
+          { label: '세후 순이익', value: fmtWon(gain - cgTax - localTax), color: gain - cgTax - localTax > 0 ? 'green' : 'red' },
+        );
+
+        renderResult('cgResult', '양도소득세 계산 결과', rows);
+        fetchLawRef('cgLawRef', '소득세법 양도소득');
+      }
+
+      // ══════════════════════════════════════════
+      // 보유세 (재산세 + 종부세) CALCULATOR
+      // ══════════════════════════════════════════
+      function calcHoldingTax() {
+        const publicPrice = n('holdPublicPrice');
+        const houses = v('holdHouseCount');
+        const fairRatio = n('holdFairRatio') / 100;
+        const regulated = v('holdRegulated') === 'yes';
+
+        if (publicPrice <= 0) {
+          renderResult('holdResult', '입력 오류', [{ label: '공시가격을 입력해주세요', value: '0 이상 필요', color: 'red' }]);
+          return;
+        }
+
+        const propTaxBase = Math.round(publicPrice * fairRatio);
+
+        let propTax;
+        if (propTaxBase <= 6000) {
+          propTax = Math.round(propTaxBase * 0.001);
+        } else if (propTaxBase <= 15000) {
+          propTax = 6 + Math.round((propTaxBase - 6000) * 0.0015);
+        } else if (propTaxBase <= 30000) {
+          propTax = 6 + 13.5 + Math.round((propTaxBase - 15000) * 0.0025);
+        } else {
+          propTax = 6 + 13.5 + 37.5 + Math.round((propTaxBase - 30000) * 0.004);
+        }
+        propTax = Math.round(propTax);
+
+        const propEduTax = Math.round(propTax * 0.2);
+        const propCityTax = Math.round(propTax * 0.14);
+
+        let jonbuTax = 0;
+        let jonbuBase = 0;
+        const threshold = houses === '1' ? 120000 : 90000;
+        if (publicPrice > threshold) {
+          jonbuBase = Math.round((publicPrice - threshold) * fairRatio);
+          const brackets = getJonbuBrackets(houses, regulated);
+          jonbuTax = calcProgressiveTax(jonbuBase, brackets);
+        }
+        const jonbuFarmTax = Math.round(jonbuTax * 0.2);
+
+        const totalPropTax = propTax + propEduTax + propCityTax;
+        const totalJonbuTax = jonbuTax + jonbuFarmTax;
+        const totalHoldingTax = totalPropTax + totalJonbuTax;
+
+        const rows = [
+          { label: '공시가격', value: fmtWon(publicPrice) },
+          { label: `과세표준 (x ${n('holdFairRatio')}%)`, value: fmtWon(propTaxBase) },
+          { label: '재산세', value: fmtWon(propTax) },
+          { label: '지방교육세 (20%)', value: fmtWon(propEduTax) },
+          { label: '도시지역분 (14%)', value: fmtWon(propCityTax) },
+          { label: '재산세 소계', value: fmtWon(totalPropTax), total: true },
+        ];
+
+        if (jonbuBase > 0) {
+          rows.push(
+            { label: `종부세 기준 (공제 ${fmt(threshold)})`, value: fmtWon(jonbuBase) },
+            { label: '종합부동산세', value: fmtWon(jonbuTax) },
+            { label: '농어촌특별세 (20%)', value: fmtWon(jonbuFarmTax) },
+            { label: '종부세 소계', value: fmtWon(totalJonbuTax), total: true },
+          );
+        } else {
+          rows.push({ label: '종합부동산세', value: `해당 없음 (공시가 ${fmt(threshold)} 이하)`, color: 'green' });
+        }
+
+        rows.push(
+          { label: '연간 보유세 합계', value: fmtWon(totalHoldingTax), total: true, color: 'red' },
+          { label: '월 환산', value: '약 ' + fmtWon(Math.round(totalHoldingTax / 12)) },
+        );
+
+        renderResult('holdResult', '보유세 계산 결과 (연간)', rows);
+      }
+
+      function getJonbuBrackets(houses, regulated) {
+        if (houses !== '1' && regulated) {
+          return [
+            { limit: 30000, rate: 1.2 },
+            { limit: 60000, rate: 1.6 },
+            { limit: 120000, rate: 2.2 },
+            { limit: 250000, rate: 3.6 },
+            { limit: 500000, rate: 5.0 },
+            { limit: Infinity, rate: 6.0 },
+          ];
+        }
+        return [
+          { limit: 30000, rate: 0.5 },
+          { limit: 60000, rate: 0.7 },
+          { limit: 120000, rate: 1.0 },
+          { limit: 250000, rate: 1.3 },
+          { limit: 500000, rate: 1.5 },
+          { limit: 940000, rate: 2.0 },
+          { limit: Infinity, rate: 2.7 },
+        ];
+      }
+
+      function calcProgressiveTax(base, brackets) {
+        let tax = 0;
+        let prev = 0;
+        for (const b of brackets) {
+          const slice = Math.min(base, b.limit) - prev;
+          if (slice <= 0) break;
+          tax += slice * b.rate / 100;
+          prev = b.limit;
+        }
+        return Math.round(tax);
+      }
+
+      // ══════════════════════════════════════════
+      // 투자수익률 CALCULATOR
+      // ══════════════════════════════════════════
+      function calcROI() {
+        const buyPrice = n('roiBuyPrice');
+        const sellPrice = n('roiSellPrice');
+        const years = n('roiYears') || 1;
+        const deposit = n('roiDeposit');
+        const loan = n('roiLoan');
+        const monthlyRent = n('roiMonthlyRent');
+        const loanRate = n('roiLoanRate') / 100;
+        const maintenance = n('roiMaintenance');
+
+        const equity = buyPrice - deposit - loan;
+        const gain = sellPrice - buyPrice;
+        const totalRent = monthlyRent * 12 * years;
+        const totalInterest = Math.round(loan * loanRate * years);
+        const totalMaintenance = maintenance * years;
+        const netProfit = gain + totalRent - totalInterest - totalMaintenance;
+        const totalROI = equity > 0 ? (netProfit / equity * 100) : 0;
+        const annualROI = equity > 0 ? (Math.pow(1 + netProfit / equity, 1 / years) - 1) * 100 : 0;
+
+        const fullEquityProfit = gain + totalRent - totalMaintenance;
+        const fullAnnualROI = (Math.pow(1 + fullEquityProfit / buyPrice, 1 / years) - 1) * 100;
+
+        renderResult('roiResult', '투자수익률 분석', [
+          { label: '매입가', value: fmtWon(buyPrice) },
+          { label: '예상 매도가', value: fmtWon(sellPrice) },
+          { label: '시세차익', value: fmtWon(gain), color: gain >= 0 ? 'green' : 'red' },
+          { label: `임대수입 (${years}년)`, value: fmtWon(totalRent) },
+          { label: `대출이자 (${years}년)`, value: '-' + fmtWon(totalInterest), color: 'red' },
+          { label: `유지비 (${years}년)`, value: '-' + fmtWon(totalMaintenance) },
+          { label: '순이익 (세전)', value: fmtWon(netProfit), total: true, color: netProfit >= 0 ? 'green' : 'red' },
+          { label: '내 투자금 (자기자본)', value: fmtWon(equity) },
+          { label: '총 수익률', value: fmtPct(totalROI) },
+          { label: '연환산 수익률 (CAGR)', value: fmtPct(annualROI), total: true, color: annualROI >= 0 ? 'green' : 'red' },
+        ]);
+
+        // 비교 카드
+        const compareEl = document.getElementById('roiCompare');
+        compareEl.innerHTML = `
+          <div class="result-title">갭투자 vs 자기자본 100%</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div style="background:var(--bg3);border-radius:10px;padding:16px;">
+              <div style="font-size:12px;color:var(--accent);font-weight:600;margin-bottom:10px;">갭투자 (레버리지)</div>
+              <div class="result-row"><span class="label">내 투자금</span><span class="value">${esc(fmtWon(equity))}</span></div>
+              <div class="result-row"><span class="label">순이익</span><span class="value ${netProfit >= 0 ? 'green' : 'red'}">${esc(fmtWon(netProfit))}</span></div>
+              <div class="result-row total"><span class="label">연 수익률</span><span class="value">${esc(fmtPct(annualROI))}</span></div>
+            </div>
+            <div style="background:var(--bg3);border-radius:10px;padding:16px;">
+              <div style="font-size:12px;color:var(--accent2);font-weight:600;margin-bottom:10px;">자기자본 100%</div>
+              <div class="result-row"><span class="label">내 투자금</span><span class="value">${esc(fmtWon(buyPrice))}</span></div>
+              <div class="result-row"><span class="label">순이익</span><span class="value ${fullEquityProfit >= 0 ? 'green' : 'red'}">${esc(fmtWon(fullEquityProfit))}</span></div>
+              <div class="result-row total"><span class="label">연 수익률</span><span class="value">${esc(fmtPct(fullAnnualROI))}</span></div>
+            </div>
+          </div>
+          <div class="info-box" style="margin-top:12px;">
+            <strong>분석:</strong> 갭투자 수익률이 ${annualROI > fullAnnualROI ? '더 높습니다' : '더 낮습니다'} (${esc(fmtPct(annualROI))} vs ${esc(fmtPct(fullAnnualROI))}).<br>
+            ${annualROI > fullAnnualROI
+              ? '레버리지 효과로 적은 돈으로 높은 수익률을 얻을 수 있지만, 전세가 하락 시 역전세 리스크가 있습니다.'
+              : '현재 조건에서는 자기자본 투자가 더 유리합니다. 대출 이자 부담이 수익을 깎고 있습니다.'}
+          </div>
+        `;
+      }
+
+      // ══════════════════════════════════════════
+      // 대출상환 CALCULATOR
+      // ══════════════════════════════════════════
+      function calcLoan() {
+        const P = n('loanPrincipal');
+        const r = n('loanRate') / 100 / 12;
+        const months = n('loanYears') * 12;
+        const method = v('loanMethod');
+
+        let monthly, totalPayment, totalInterest;
+
+        if (method === 'equal') {
+          if (r === 0) { monthly = Math.round(P / months); }
+          else { monthly = Math.round(P * r * Math.pow(1 + r, months) / (Math.pow(1 + r, months) - 1)); }
+          totalPayment = monthly * months;
+          totalInterest = totalPayment - P;
+        } else if (method === 'principal') {
+          const monthlyPrincipal = P / months;
+          monthly = Math.round(monthlyPrincipal + P * r);
+          totalInterest = Math.round((P * r * (months + 1)) / 2);
+          totalPayment = P + totalInterest;
+        } else {
+          monthly = Math.round(P * r);
+          totalInterest = monthly * months;
+          totalPayment = P + totalInterest;
+        }
+
+        const rows = [
+          { label: '대출 원금', value: fmtWon(P) },
+          { label: '연 이자율', value: fmtPct(n('loanRate')) },
+          { label: '상환 기간', value: `${n('loanYears')}년 (${months}개월)` },
+        ];
+
+        if (method === 'equal') {
+          rows.push({ label: '월 상환금 (매월 동일)', value: fmtWon(monthly), total: true });
+        } else if (method === 'principal') {
+          rows.push(
+            { label: '첫 달 상환금 (가장 많음)', value: fmtWon(monthly) },
+            { label: '마지막 달 상환금', value: fmtWon(Math.round(P / months + P / months * r)) },
+          );
+        } else {
+          rows.push({ label: '월 이자 납부 (원금은 만기 일시상환)', value: fmtWon(monthly), total: true });
+        }
+
+        rows.push(
+          { label: '총 이자', value: fmtWon(totalInterest), color: 'red' },
+          { label: '총 상환액 (원금 + 이자)', value: fmtWon(totalPayment), total: true },
+        );
+
+        renderResult('loanResult', '대출 상환 계산 결과', rows);
+      }
+
+      // ══════════════════════════════════════════
+      // 복리 투자 CALCULATOR
+      // ══════════════════════════════════════════
+      function calcCompound() {
+        const initial = n('compInitial');
+        const monthly = n('compMonthly');
+        const rate = n('compRate') / 100;
+        const years = n('compYears');
+        const monthlyRate = rate / 12;
+        const months = years * 12;
+
+        let balance = initial;
+        for (let i = 0; i < months; i++) {
+          balance = balance * (1 + monthlyRate) + monthly;
+        }
+        balance = Math.round(balance);
+
+        const totalInvested = initial + monthly * months;
+        const totalReturn = balance - totalInvested;
+
+        renderResult('compResult', '복리 투자 결과', [
+          { label: '초기 투자금', value: fmtWon(initial) },
+          { label: `월 적립금 x ${months}개월`, value: fmtWon(monthly * months) },
+          { label: '총 투자원금', value: fmtWon(totalInvested) },
+          { label: '투자 수익', value: fmtWon(totalReturn), color: 'green' },
+          { label: `${years}년 후 총액`, value: fmtWon(balance), total: true, color: 'green' },
+          { label: '수익률', value: fmtPct(totalReturn / totalInvested * 100) },
+        ]);
+      }
+
+      // ══════════════════════════════════════════
+      // LAW API REFERENCE
+      // ══════════════════════════════════════════
+      async function fetchLawRef(elementId, query) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+        el.textContent = '관련 법령 조회 중...';
+        try {
+          const res = await fetch(`${API_BASE}/api/law-search?q=${encodeURIComponent(query)}`);
+          const payload = await res.json();
+          if (payload.error) {
+            el.textContent = `법령 API: ${payload.message}`;
+            return;
+          }
+          const data = payload.data;
+          if (data?.LawSearch?.law) {
+            const laws = Array.isArray(data.LawSearch.law) ? data.LawSearch.law : [data.LawSearch.law];
+            el.innerHTML = laws.slice(0, 3).map(l =>
+              `<div style="margin-bottom:8px;padding:8px;background:var(--bg3);border-radius:6px;">` +
+              `<strong style="color:var(--text);">${esc(l['법령명한글'] || l['법령명'] || '')}</strong><br>` +
+              `<span style="color:var(--text3);">시행일: ${esc(l['시행일자'] || '')} | ` +
+              `법령ID: ${esc(l['법령ID'] || '')}</span></div>`
+            ).join('');
+          } else {
+            el.textContent = '법령 데이터를 파싱할 수 없습니다.';
+          }
+        } catch (e) {
+          el.textContent = `법령 조회 실패: ${e.message}`;
+        }
+      }
+    </script>
+    <footer style="max-width:520px;margin:32px auto 0;padding:16px 0;border-top:1px solid var(--border);color:var(--text3);font-size:11px;line-height:1.6;text-align:center;">
+      <div>본 서비스는 공공데이터를 활용하며, 세금 계산 결과는 참고용입니다.</div>
+      <div style="margin-top:6px;">
+        데이터 출처:
+        <a href="https://www.data.go.kr/" target="_blank" rel="noopener" style="color:var(--accent);">공공데이터포털(data.go.kr)</a> ·
+        <a href="https://www.vworld.kr/" target="_blank" rel="noopener" style="color:var(--accent);">V-World(국토정보플랫폼)</a> ·
+        <a href="https://open.law.go.kr/" target="_blank" rel="noopener" style="color:var(--accent);">법제처 Open API</a>
+      </div>
+      <div style="margin-top:4px;">© 2026 apt-project · MIT License</div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,57 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/security_trigger.py",
+            "timeout": 10,
+            "blocking": true
+          }
+        ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/awesome_copilot_bridge.py pretool",
+            "timeout": 15,
+            "blocking": true
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/awesome_copilot_bridge.py prompt",
+            "timeout": 15,
+            "blocking": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/awesome_copilot_bridge.py stop",
+            "timeout": 60,
+            "blocking": true
+          },
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\": \"If the work is ready for review, run the pr-reviewer agent next.\"}'",
+            "blocking": true
+          }
+        ]
+      }
+    ]
+  }
+}
