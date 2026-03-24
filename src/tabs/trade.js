@@ -89,7 +89,7 @@ export async function loadData() {
   const region = document.getElementById("regionSelect").value;
   const month = document.getElementById("monthSelect").value;
   const endpoint = TRADE_API[state.propertyType];
-  const url = `http://localhost:3000/api/${endpoint}?LAWD_CD=${region}&DEAL_YMD=${month}&numOfRows=1000&pageNo=1`;
+  const url = `/api/${endpoint}?LAWD_CD=${region}&DEAL_YMD=${month}&numOfRows=1000&pageNo=1`;
 
   state.tradeStateMessage = "로딩 중...";
   document.getElementById("tableBody").innerHTML =
@@ -278,7 +278,7 @@ export async function showBuildingModal(d) {
       pageNo: "1",
     });
     const res = await fetch(
-      `http://localhost:3000/api/building?${params}`,
+      `/api/building?${params}`,
     );
     const xml = await res.text();
     const doc = new DOMParser().parseFromString(xml, "application/xml");

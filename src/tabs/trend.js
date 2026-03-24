@@ -150,7 +150,7 @@ export function updateTrendArea(selectionId, areaKey) {
 }
 
 export function buildTrendTradeUrl(region, ym, pageNo = 1) {
-  return `http://localhost:3000/api/apt-trade?LAWD_CD=${region}&DEAL_YMD=${ym}&numOfRows=${state.TREND_SUGGEST_PAGE_SIZE}&pageNo=${pageNo}`;
+  return `/api/apt-trade?LAWD_CD=${region}&DEAL_YMD=${ym}&numOfRows=${state.TREND_SUGGEST_PAGE_SIZE}&pageNo=${pageNo}`;
 }
 
 export function updateTrendInputPlaceholder() {
@@ -607,7 +607,7 @@ export async function loadTrendData() {
   const fetches = regionCodes.flatMap((regionCode) =>
     months.map((ym) =>
       fetchApiJson(
-        `http://localhost:3000/api/apt-trade?LAWD_CD=${regionCode}&DEAL_YMD=${ym}&numOfRows=1000&pageNo=1`,
+        `/api/apt-trade?LAWD_CD=${regionCode}&DEAL_YMD=${ym}&numOfRows=1000&pageNo=1`,
       )
         .then((payload) => ({
           regionCode,

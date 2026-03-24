@@ -635,7 +635,7 @@ export async function hydrateListingLocationInsights(pageRows) {
 
   try {
     const payload = await fetchApiJson(
-      `http://localhost:3000/api/redevelopment-location-insights?${params.toString()}`,
+      `/api/redevelopment-location-insights?${params.toString()}`,
     );
     if (
       requestKey !== state.listingLocationRequestKey ||
@@ -794,7 +794,7 @@ export async function loadListingData() {
   updateListingStatusNote({ buildingHubStatus: "loading" });
   try {
     const payload = await fetchApiJson(
-      `http://localhost:3000/api/redevelopment-grid?${requestKey}`,
+      `/api/redevelopment-grid?${requestKey}`,
     );
     if (requestSeq !== state.listingRequestSeq) {
       return;

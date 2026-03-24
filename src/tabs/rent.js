@@ -70,7 +70,7 @@ export async function loadRentData() {
   const region = document.getElementById("rentRegionSelect").value;
   const month = document.getElementById("rentMonthSelect").value;
   const endpoint = RENT_API[state.rentPropertyType];
-  const url = `http://localhost:3000/api/${endpoint}?LAWD_CD=${region}&DEAL_YMD=${month}&numOfRows=1000&pageNo=1`;
+  const url = `/api/${endpoint}?LAWD_CD=${region}&DEAL_YMD=${month}&numOfRows=1000&pageNo=1`;
 
   state.rentStateMessage = "로딩 중...";
   document.getElementById("rentTableBody").innerHTML =

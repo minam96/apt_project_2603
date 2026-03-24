@@ -99,7 +99,7 @@ export let regionCatalog = createRegionCatalogFromFlatOptions(REGION_OPTIONS);
 export async function loadRegionCatalog() {
   try {
     const payload = await fetchApiJson(
-      "http://localhost:3000/api/regions",
+      "/api/regions",
     );
     if (
       Array.isArray(payload?.sidoOptions) &&
