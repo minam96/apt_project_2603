@@ -448,8 +448,22 @@ const PNU_REGEX = /^\d{19}$/;
 const YEAR_REGEX = /^\d{4}$/;
 const REGION_CODE_REGEX = /^\d{5}$/;
 
-function writeCorsHeaders(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+function writeCorsHeaders(res, req) {
+  const origin = (req && req.headers && req.headers.origin) || "";
+  if (ALLOWED_ORIGINS.length > 0) {
+    // 허용 목록에 있는 origin만 허용
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+    }
+  } else {
+    // 개발 환경: 모든 origin 허용
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
@@ -6464,8 +6478,10 @@ const requestHandler = async (req, res) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
 
+  // CORS 헤더를 최상단에서 1회 설정 (req.headers.origin 기반)
+  writeCorsHeaders(res, req);
+
   if (req.method === "OPTIONS") {
-    writeCorsHeaders(res);
     res.writeHead(204);
     res.end();
     return;

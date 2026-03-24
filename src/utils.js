@@ -34,10 +34,18 @@ export function getRecentYearMonths(count, startOffset = DEFAULT_MONTH_OFFSET) {
   return months;
 }
 
+// Vite 빌드 시 VITE_API_BASE 환경변수로 외부 백엔드 지정 가능
+// 예: VITE_API_BASE=https://apt-api.onrender.com
+const API_BASE = (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE) || "";
+
 const _apiCache = new Map();
 const _API_CACHE_TTL = 5 * 60 * 1000;
 
 export async function fetchApiJson(url, { noCache = false } = {}) {
+  // /api/... 경로를 외부 백엔드로 라우팅
+  if (API_BASE && url.startsWith("/api/")) {
+    url = API_BASE + url;
+  }
   if (!noCache) {
     const cached = _apiCache.get(url);
     if (cached && Date.now() - cached.ts < _API_CACHE_TTL) {

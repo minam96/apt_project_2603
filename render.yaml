@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: apt-api
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: DATA_GO_KR_API_KEY
+        sync: false
+      - key: MOLIT_API_KEY
+        sync: false
+      - key: VWORLD_API_KEY
+        sync: false
+      - key: VWORLD_API_KEY_getLandUse
+        sync: false
+      - key: DATA_SEOUL_realestate
+        sync: false
+      - key: DATA_SEOUL_getLandUse
+        sync: false
+      - key: LAW_API_OC
+        sync: false
+    healthCheckPath: /api/config
