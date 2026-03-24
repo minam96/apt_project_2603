@@ -87,6 +87,28 @@ function vworldHeaders() {
   return {};
 }
 
+// Render(해외 IP)에서 VWorld 직접 호출 실패 시 Vercel(국내 엣지) 프록시 경유
+const VWORLD_PROXY_BASE =
+  ENV_FILE.VWORLD_PROXY_BASE || process.env.VWORLD_PROXY_BASE || "";
+
+async function fetchTextWithVworldFallback(targetUrl, headers = {}) {
+  try {
+    return await fetchText(targetUrl, headers);
+  } catch (err) {
+    // VWorld 502/ETIMEDOUT → Vercel 프록시로 재시도
+    if (
+      VWORLD_PROXY_BASE &&
+      targetUrl.includes("vworld.kr") &&
+      (String(err.message).includes("502") || err.code === "ETIMEDOUT")
+    ) {
+      const proxyUrl = `${VWORLD_PROXY_BASE}/api/vworld-proxy?url=${encodeURIComponent(targetUrl)}`;
+      console.log(`[vworld-proxy] retrying via ${VWORLD_PROXY_BASE}`);
+      return await fetchText(proxyUrl);
+    }
+    throw err;
+  }
+}
+
 // ── 서울 열린데이터 광장 API 키 ──
 const SEOUL_BUILDING_API_KEY =
   ENV_FILE.DATA_SEOUL_getLandUse ||
@@ -2076,7 +2098,7 @@ async function fetchVworldZoning(parcelMetadata) {
   });
 
   try {
-    const { body } = await fetchText(targetUrl, {
+    const { body } = await fetchTextWithVworldFallback(targetUrl, {
       Accept: "application/json, */*",
     });
     const parsed = JSON.parse(body);
@@ -2147,7 +2169,7 @@ async function fetchVworldLandUseAttr(pnu) {
   const targetUrl = `https://api.vworld.kr/ned/data/getLandUseAttr?${params}`;
 
   try {
-    const { body } = await fetchText(targetUrl);
+    const { body } = await fetchTextWithVworldFallback(targetUrl);
     if (!body) {
       const result = { status: "upstream_error", zoning: null };
       setTimedMapValue(vworldZoningCache, cacheKey, result);
@@ -2306,7 +2328,7 @@ async function fetchVworldParcelForAddress(query) {
   const targetUrl = `https://api.vworld.kr/req/address?service=address&request=getcoord&version=2.0&crs=epsg:4326&type=PARCEL&format=json&key=${encodeURIComponent(VWORLD_API_KEY)}&address=${encodeURIComponent(normalizedQuery)}`;
 
   try {
-    const { body } = await fetchText(targetUrl);
+    const { body } = await fetchTextWithVworldFallback(targetUrl);
     const parsed = JSON.parse(body);
     const parcel = extractPnuFromVworldPayload(parsed);
     const point = extractPointFromVworldPayload(parsed);
@@ -6166,7 +6188,7 @@ async function handleVworldLandPrice(searchParams, res) {
 
   try {
     console.log(`[vworld] pnu=${pnu} year=${stdrYear}`);
-    const { body } = await fetchText(targetUrl);
+    const { body } = await fetchTextWithVworldFallback(targetUrl);
     let parsed;
     try { parsed = JSON.parse(body); } catch { parsed = body; }
     sendJson(res, 200, { source: "vworld", data: parsed });
@@ -6192,7 +6214,7 @@ async function handleVworldAddress(searchParams, res) {
 
   try {
     console.log(`[vworld-addr] q=${query}`);
-    const { body } = await fetchText(targetUrl);
+    const { body } = await fetchTextWithVworldFallback(targetUrl);
     let parsed;
     try { parsed = JSON.parse(body); } catch { parsed = body; }
     sendJson(res, 200, { source: "vworld", data: parsed });
