@@ -5873,6 +5873,16 @@ async function handleMcpRoute(routeConfig, searchParams, res) {
     return;
   }
 
+  // 입력값 형식 검증 (파라미터 인젝션 방지)
+  if (!/^\d{5}$/.test(regionCode)) {
+    sendJson(res, 400, { error: "bad_request", message: "Invalid LAWD_CD format.", source: SOURCE });
+    return;
+  }
+  if (!/^\d{6}$/.test(yearMonth)) {
+    sendJson(res, 400, { error: "bad_request", message: "Invalid DEAL_YMD format.", source: SOURCE });
+    return;
+  }
+
   const cacheKey = `${routeConfig.tool}:${regionCode}:${yearMonth}:${numOfRows}`;
   const cached = getCached(cacheKey);
   if (cached) {

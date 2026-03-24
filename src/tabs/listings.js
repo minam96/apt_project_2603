@@ -603,6 +603,8 @@ export function renderListingRow(row) {
     </tr>`;
 }
 
+const LOCATION_BATCH_SIZE = 3;
+
 export async function hydrateListingLocationInsights(pageRows) {
   if (
     !state.listingLoaded ||
@@ -630,13 +632,10 @@ export async function hydrateListingLocationInsights(pageRows) {
   ids.forEach((id) => state.listingLocationInFlightIds.add(id));
   const requestKey = state.listingLocationRequestKey;
   const hydrationSeq = ++state.listingLocationHydrationSeq;
-  const params = new URLSearchParams(requestKey);
-  ids.forEach((id) => params.append("id", id));
 
   try {
-    const payload = await fetchApiJson(
-      `/api/redevelopment-location-insights?${params.toString()}`,
-    );
+  // 3개씩 배치로 나눠서 순차 요청 (Vercel 30초 제한 회피)
+  for (let i = 0; i < ids.length; i += LOCATION_BATCH_SIZE) {
     if (
       requestKey !== state.listingLocationRequestKey ||
       hydrationSeq !== state.listingLocationHydrationSeq
@@ -644,82 +643,95 @@ export async function hydrateListingLocationInsights(pageRows) {
       return;
     }
 
-    const patchMap = new Map(
-      (payload?.items || [])
-        .map((item) => [String(item?.id || "").trim(), item])
-        .filter(([id]) => id),
-    );
-    if (!patchMap.size) {
-      return;
-    }
+    const batch = ids.slice(i, i + LOCATION_BATCH_SIZE);
+    const params = new URLSearchParams(requestKey);
+    batch.forEach((id) => params.append("id", id));
 
-    let changed = false;
-    state.listingData = state.listingData.map((row) => {
-      const patch = patchMap.get(String(row?.id || "").trim());
-      if (!patch) {
-        return row;
-      }
-      changed = true;
-      return {
-        ...row,
-        ...patch,
-        locationInsightsPending: false,
-      };
-    });
-
-    if (!changed) {
-      return;
-    }
-
-    state.listingSummaryData = {
-      ...(state.listingSummaryData || {}),
-      locationInsightsStatus: state.listingData.some((row) =>
-        isListingLocationInsightsPending(row),
-      )
-        ? "partial"
-        : "ok",
-    };
-    renderListingTable();
-    updateListingStatusNote(state.listingSummaryData);
-  } catch (error) {
-    console.error(error);
-    if (
-      requestKey !== state.listingLocationRequestKey ||
-      hydrationSeq !== state.listingLocationHydrationSeq
-    ) {
-      return;
-    }
-
-    const failedIds = new Set(ids);
-    let changed = false;
-    state.listingData = state.listingData.map((row) => {
-      const rowId = String(row?.id || "").trim();
+    try {
+      const payload = await fetchApiJson(
+        `/api/redevelopment-location-insights?${params.toString()}`,
+      );
       if (
-        !failedIds.has(rowId) ||
-        !isListingLocationInsightsPending(row)
+        requestKey !== state.listingLocationRequestKey ||
+        hydrationSeq !== state.listingLocationHydrationSeq
       ) {
-        return row;
+        return;
       }
-      changed = true;
-      return {
-        ...row,
-        nearbyElementarySchoolStatus: "unknown",
-        nearbyParkStatus: "unknown",
-        flatLandStatus: "unknown",
-        locationInsightsPending: false,
-      };
-    });
 
-    if (!changed) {
-      return;
+      const patchMap = new Map(
+        (payload?.items || [])
+          .map((item) => [String(item?.id || "").trim(), item])
+          .filter(([id]) => id),
+      );
+      if (!patchMap.size) {
+        continue;
+      }
+
+      let changed = false;
+      state.listingData = state.listingData.map((row) => {
+        const patch = patchMap.get(String(row?.id || "").trim());
+        if (!patch) {
+          return row;
+        }
+        changed = true;
+        return {
+          ...row,
+          ...patch,
+          locationInsightsPending: false,
+        };
+      });
+
+      if (changed) {
+        state.listingSummaryData = {
+          ...(state.listingSummaryData || {}),
+          locationInsightsStatus: state.listingData.some((row) =>
+            isListingLocationInsightsPending(row),
+          )
+            ? "partial"
+            : "ok",
+        };
+        renderListingTable();
+        updateListingStatusNote(state.listingSummaryData);
+      }
+    } catch (error) {
+      console.error(error);
+      if (
+        requestKey !== state.listingLocationRequestKey ||
+        hydrationSeq !== state.listingLocationHydrationSeq
+      ) {
+        return;
+      }
+
+      const failedIds = new Set(batch);
+      let changed = false;
+      state.listingData = state.listingData.map((row) => {
+        const rowId = String(row?.id || "").trim();
+        if (
+          !failedIds.has(rowId) ||
+          !isListingLocationInsightsPending(row)
+        ) {
+          return row;
+        }
+        changed = true;
+        return {
+          ...row,
+          nearbyElementarySchoolStatus: "unknown",
+          nearbyParkStatus: "unknown",
+          flatLandStatus: "unknown",
+          locationInsightsPending: false,
+        };
+      });
+
+      if (changed) {
+        state.listingSummaryData = {
+          ...(state.listingSummaryData || {}),
+          locationInsightsStatus: "upstream_error",
+        };
+        renderListingTable();
+        updateListingStatusNote(state.listingSummaryData);
+      }
     }
-
-    state.listingSummaryData = {
-      ...(state.listingSummaryData || {}),
-      locationInsightsStatus: "upstream_error",
-    };
-    renderListingTable();
-    updateListingStatusNote(state.listingSummaryData);
+  }
   } finally {
     if (requestKey === state.listingLocationRequestKey) {
       ids.forEach((id) => state.listingLocationInFlightIds.delete(id));

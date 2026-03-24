@@ -35,7 +35,18 @@ async function initialize() {
 }
 
 module.exports = async function handler(req, res) {
-  const urlPath = (req.url || "").split("?")[0].replace(/^\/api\/?/, "");
+  const urlPath = (req.url || "")
+    .split("?")[0]
+    .replace(/^\/api\/?/, "")
+    .replace(/\/+$/, "");
+
+  // 경로 순회 방지
+  if (urlPath.includes("..") || urlPath.includes("\\")) {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "invalid_path" }));
+    return;
+  }
 
   const isAllowed = ALLOWED_PREFIXES.some(
     (prefix) => urlPath === prefix || urlPath.startsWith(prefix + "/"),
