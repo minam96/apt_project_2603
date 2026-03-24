@@ -13,13 +13,17 @@ const SOURCE = "real-estate-mcp";
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 const MCP_SERVER_CWD = path.join(__dirname, "_ref_real-estate-mcp");
-const REGION_CODE_FILE = path.join(
+const REGION_CODE_FILE_PRIMARY = path.join(
   MCP_SERVER_CWD,
   "src",
   "real_estate",
   "resources",
   "region_codes.txt",
 );
+const REGION_CODE_FILE_FALLBACK = path.join(__dirname, "data", "region_codes.txt");
+const REGION_CODE_FILE = fs.existsSync(REGION_CODE_FILE_PRIMARY)
+  ? REGION_CODE_FILE_PRIMARY
+  : REGION_CODE_FILE_FALLBACK;
 const LOCAL_DATA_DIR = path.join(__dirname, "data");
 const GENERATED_DATA_DIR = path.join(LOCAL_DATA_DIR, "generated");
 const STATION_DATA_FILE = path.join(GENERATED_DATA_DIR, "subway-stations.json");

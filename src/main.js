@@ -107,7 +107,7 @@ function closeModal() {
 function updateApiStatus(ok) {
   document.getElementById('statusDot').textContent = ok ? '🟢' : '🟠';
   document.getElementById('statusText').textContent = ok
-    ? 'MCP 연결됨'
+    ? 'API 연결됨'
     : '데모 모드';
 }
 
@@ -133,8 +133,9 @@ async function init() {
         apartmentCoordsAvailable:
           !!config?.datasets?.apartmentCoords?.available,
       };
-      isConnected = !!connected;
-      updateApiStatus(connected);
+      const apiAvailable = !!connected || !!config?.integrations?.dataGoKr;
+      isConnected = apiAvailable;
+      updateApiStatus(apiAvailable);
     } else {
       updateApiStatus(false);
     }
