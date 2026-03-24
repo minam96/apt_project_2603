@@ -782,7 +782,7 @@ export async function loadListingData() {
   state.listingLoading = true;
   state.listingLoaded = false;
   state.listingSummaryData = null;
-  state.listingStateMessage = "로딩 중...";
+  state.listingStateMessage = "데이터 수집 중... (최대 30초 소요)";
   state.listingData = [];
   state.listingPage = 1;
   state.listingColFilters = {};

@@ -198,12 +198,12 @@ const mcpState = {
   lastError: null,
 };
 
-const LISTING_LOOKBACK_MONTHS = 12;
+const LISTING_LOOKBACK_MONTHS = 6;
 const LISTING_PAGE_SIZE = 1000;
-const LISTING_MAX_PAGES = 3;
+const LISTING_MAX_PAGES = 2;
 const LISTING_MAX_COMPLEXES = 50;
-const LISTING_MAX_SEEDS = 150;
-const LISTING_ENRICH_CONCURRENCY = 8;
+const LISTING_MAX_SEEDS = 80;
+const LISTING_ENRICH_CONCURRENCY = 15;
 const TRADE_ENRICH_CONCURRENCY = 8;
 const LISTING_CACHE_TTL_MS = 60 * 60 * 1000;
 const LISTING_SEED_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -4541,63 +4541,69 @@ async function collectListingSeedPool(regionCode) {
 
   const seedMap = new Map();
 
-  for (const yearMonth of months) {
-    let pageNo = 1;
-    let totalPages = 1;
+  // 월별 첫 페이지를 병렬로 가져옴
+  const firstPages = await Promise.all(
+    months.map((yearMonth) =>
+      fetchRawTradeRowsPage("apt", regionCode, yearMonth, LISTING_PAGE_SIZE, 1)
+        .then((result) => ({ yearMonth, ...result }))
+        .catch(() => ({ yearMonth, rows: [], totalCount: 0 })),
+    ),
+  );
 
-    while (pageNo <= Math.min(totalPages, LISTING_MAX_PAGES)) {
-      const { rows, totalCount } = await fetchRawTradeRowsPage(
-        "apt",
-        regionCode,
-        yearMonth,
-        LISTING_PAGE_SIZE,
-        pageNo,
+  // 추가 페이지가 필요한 월 수집
+  const extraFetches = [];
+  for (const { yearMonth, totalCount } of firstPages) {
+    const totalPages = totalCount > 0 ? Math.ceil(totalCount / LISTING_PAGE_SIZE) : 1;
+    for (let pageNo = 2; pageNo <= Math.min(totalPages, LISTING_MAX_PAGES); pageNo++) {
+      extraFetches.push(
+        fetchRawTradeRowsPage("apt", regionCode, yearMonth, LISTING_PAGE_SIZE, pageNo)
+          .then((result) => ({ yearMonth, ...result }))
+          .catch(() => ({ yearMonth, rows: [], totalCount: 0 })),
       );
-      totalPages = totalCount > 0 ? Math.ceil(totalCount / LISTING_PAGE_SIZE) : 1;
+    }
+  }
 
-      for (const row of rows) {
-        const aptName = String(row.apt || "").trim();
-        if (!aptName) {
-          continue;
-        }
+  const extraPages = extraFetches.length > 0 ? await Promise.all(extraFetches) : [];
+  const allPages = [...firstPages, ...extraPages];
 
-        const key = buildListingSeedKey(row);
-        let entry = seedMap.get(key);
-        if (!entry) {
-          entry = {
-            apt: aptName,
-            dong: row.dong || "",
-            buildYear: row.buildYear || "",
-            tradeCount: 0,
-            parcels: new Map(),
-          };
-          seedMap.set(key, entry);
-        }
-
-        entry.tradeCount += 1;
-        if (!entry.buildYear && row.buildYear) {
-          entry.buildYear = row.buildYear;
-        }
-
-        const parcelKey = [
-          row.sigunguCd || "",
-          row.bjdongCd || "",
-          row.bun || "",
-          row.ji || "",
-        ].join("|");
-        if (!entry.parcels.has(parcelKey)) {
-          entry.parcels.set(parcelKey, {
-            ...row,
-            hits: 0,
-          });
-        }
-        entry.parcels.get(parcelKey).hits += 1;
+  for (const { rows } of allPages) {
+    for (const row of rows) {
+      const aptName = String(row.apt || "").trim();
+      if (!aptName) {
+        continue;
       }
 
-      if (rows.length < LISTING_PAGE_SIZE) {
-        break;
+      const key = buildListingSeedKey(row);
+      let entry = seedMap.get(key);
+      if (!entry) {
+        entry = {
+          apt: aptName,
+          dong: row.dong || "",
+          buildYear: row.buildYear || "",
+          tradeCount: 0,
+          parcels: new Map(),
+        };
+        seedMap.set(key, entry);
       }
-      pageNo += 1;
+
+      entry.tradeCount += 1;
+      if (!entry.buildYear && row.buildYear) {
+        entry.buildYear = row.buildYear;
+      }
+
+      const parcelKey = [
+        row.sigunguCd || "",
+        row.bjdongCd || "",
+        row.bun || "",
+        row.ji || "",
+      ].join("|");
+      if (!entry.parcels.has(parcelKey)) {
+        entry.parcels.set(parcelKey, {
+          ...row,
+          hits: 0,
+        });
+      }
+      entry.parcels.get(parcelKey).hits += 1;
     }
   }
 
