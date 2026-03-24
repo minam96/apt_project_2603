@@ -1,5 +1,6 @@
 const http = require("http");
 const https = require("https");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -1411,12 +1412,18 @@ function sanitizeUrl(targetUrl) {
   return String(targetUrl).replace(/serviceKey=[^&]+/gi, "serviceKey=***");
 }
 
+// VWorld TLS renegotiation 대응 agent
+const vworldAgent = new https.Agent({
+  rejectUnauthorized: true,
+  secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
+});
+
 function fetchText(targetUrl, headers = {}) {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(targetUrl);
+    const isVworld = parsedUrl.hostname.endsWith("vworld.kr");
     // VWorld API 호출 시 Referer 자동 추가 (도메인 인증)
-    const autoHeaders =
-      parsedUrl.hostname.endsWith("vworld.kr") ? vworldHeaders() : {};
+    const autoHeaders = isVworld ? vworldHeaders() : {};
     const client = parsedUrl.protocol === "http:" ? http : https;
     const request = client.request(
       {
@@ -1424,6 +1431,7 @@ function fetchText(targetUrl, headers = {}) {
         hostname: parsedUrl.hostname,
         port: parsedUrl.port || undefined,
         path: parsedUrl.pathname + parsedUrl.search,
+        ...(isVworld ? { agent: vworldAgent } : {}),
         headers: {
           "User-Agent": USER_AGENT,
           ...autoHeaders,

@@ -5,6 +5,12 @@ const https = require("https");
 
 const ALLOWED_HOSTS = ["api.vworld.kr"];
 
+// VWorld은 TLS renegotiation을 사용 — Node.js 기본 설정에서 거부될 수 있음
+const agent = new https.Agent({
+  rejectUnauthorized: true,
+  secureOptions: require("crypto").constants.SSL_OP_LEGACY_SERVER_CONNECT,
+});
+
 module.exports = async function handler(req, res) {
   const targetUrl = req.query?.url || "";
 
@@ -37,7 +43,11 @@ module.exports = async function handler(req, res) {
   return new Promise((resolve) => {
     const proxyReq = https.get(
       targetUrl,
-      { headers: { "User-Agent": "apt-dashboard/1.0" }, timeout: 15000 },
+      {
+        agent,
+        headers: { "User-Agent": "apt-dashboard/1.0" },
+        timeout: 15000,
+      },
       (proxyRes) => {
         let data = "";
         proxyRes.setEncoding("utf8");
