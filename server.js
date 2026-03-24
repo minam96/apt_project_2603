@@ -5532,13 +5532,31 @@ async function getListingCacheEntryForRegion(regionCode, searchQuery = "") {
     )
     .slice(0, LISTING_MAX_COMPLEXES);
 
-  const rows = collapsedItems.map((item) =>
-    buildListingRow(
-      item.seed,
-      item.snapshot,
-      regionCode,
-      buildPendingListingLocationInsights(),
-    ),
+  const rows = await Promise.all(
+    collapsedItems.map(async (item) => {
+      // 근처 역은 로컬 데이터로 즉시 계산 (VWorld 불필요)
+      let partialInsights = buildPendingListingLocationInsights();
+      try {
+        const coord = await resolveApartmentCoordinate(item.seed, regionCode);
+        if (coord) {
+          const nearestStation = findNearestStationForApartment(coord);
+          if (nearestStation) {
+            const WALKING_KM = 2.0;
+            partialInsights.nearbyStation =
+              nearestStation.distanceKm <= WALKING_KM
+                ? nearestStation.label || ""
+                : "";
+            partialInsights.nearbyStationDistanceKm = nearestStation.distanceKm;
+          }
+        }
+      } catch { /* 실패 시 deferred로 유지 */ }
+      return buildListingRow(
+        item.seed,
+        item.snapshot,
+        regionCode,
+        partialInsights,
+      );
+    }),
   );
   const rowContextsById = new Map();
   rows.forEach((row, index) => {
