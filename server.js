@@ -133,7 +133,7 @@ const MCP_ROUTES = {
     rawKind: "apt",
     rawUrl: API_URLS.aptTrade,
   },
-  "/api/apt-rent": { tool: "get_apartment_rent", kind: "rent", rawKind: "apt" },
+  "/api/apt-rent": { tool: "get_apartment_rent", kind: "rent", rawKind: "apt", rawUrl: API_URLS.aptRent },
   "/api/offi-trade": {
     tool: "get_officetel_trades",
     kind: "trade",
@@ -144,6 +144,7 @@ const MCP_ROUTES = {
     tool: "get_officetel_rent",
     kind: "rent",
     rawKind: "offi",
+    rawUrl: API_URLS.offiRent,
   },
   "/api/villa-trade": {
     tool: "get_villa_trades",
@@ -151,7 +152,7 @@ const MCP_ROUTES = {
     rawKind: "villa",
     rawUrl: API_URLS.villaTrade,
   },
-  "/api/villa-rent": { tool: "get_villa_rent", kind: "rent", rawKind: "villa" },
+  "/api/villa-rent": { tool: "get_villa_rent", kind: "rent", rawKind: "villa", rawUrl: API_URLS.villaRent },
   "/api/house-trade": {
     tool: "get_single_house_trades",
     kind: "trade",
@@ -162,6 +163,7 @@ const MCP_ROUTES = {
     tool: "get_single_house_rent",
     kind: "rent",
     rawKind: "house",
+    rawUrl: API_URLS.houseRent,
   },
   "/api/comm-trade": {
     tool: "get_commercial_trade",
@@ -4391,6 +4393,122 @@ async function fetchRawTradeRows(routeConfig, regionCode, yearMonth, numOfRows) 
   return parseRawTradeRows(body, routeConfig.rawKind);
 }
 
+// ── 전월세 XML 파싱 (직접 API fallback 용) ──
+function parseRawRentRows(xmlText, rawKind) {
+  return extractXmlItems(xmlText)
+    .map((itemXml) => {
+      const deposit = parseAmount(
+        getXmlTagValue(itemXml, "deposit") ||
+        getXmlTagValue(itemXml, "보증금액"),
+      );
+      const monthlyRent = parseAmount(
+        getXmlTagValue(itemXml, "monthlyRentAmount") ||
+        getXmlTagValue(itemXml, "월세금액") ||
+        getXmlTagValue(itemXml, "monthlyRent"),
+      );
+
+      const baseRow = {
+        dong: getXmlTagValue(itemXml, "umdNm") || getXmlTagValue(itemXml, "법정동"),
+        gu: getXmlTagValue(itemXml, "umdNm") || getXmlTagValue(itemXml, "법정동"),
+        deposit: deposit || 0,
+        monthly: monthlyRent || 0,
+        date: makeDate(
+          getXmlTagValue(itemXml, "dealYear") || getXmlTagValue(itemXml, "년"),
+          getXmlTagValue(itemXml, "dealMonth") || getXmlTagValue(itemXml, "월"),
+          getXmlTagValue(itemXml, "dealDay") || getXmlTagValue(itemXml, "일"),
+        ),
+        buildYear: parseIntSafe(getXmlTagValue(itemXml, "buildYear") || getXmlTagValue(itemXml, "건축년도")) || "",
+      };
+      baseRow.type = baseRow.monthly > 0 ? "월세" : "전세";
+
+      if (rawKind === "apt") {
+        return {
+          ...baseRow,
+          apt: getXmlTagValue(itemXml, "aptNm") || getXmlTagValue(itemXml, "단지명") || "N/A",
+          area: parseFloatSafe(getXmlTagValue(itemXml, "excluUseAr") || getXmlTagValue(itemXml, "전용면적")),
+          floor: parseIntSafe(getXmlTagValue(itemXml, "floor") || getXmlTagValue(itemXml, "층")),
+        };
+      }
+
+      if (rawKind === "offi") {
+        return {
+          ...baseRow,
+          apt: getXmlTagValue(itemXml, "offiNm") || "N/A",
+          area: parseFloatSafe(getXmlTagValue(itemXml, "excluUseAr")),
+          floor: parseIntSafe(getXmlTagValue(itemXml, "floor")),
+        };
+      }
+
+      if (rawKind === "villa") {
+        return {
+          ...baseRow,
+          apt: getXmlTagValue(itemXml, "mhouseNm") || getXmlTagValue(itemXml, "houseType") || "N/A",
+          area: parseFloatSafe(getXmlTagValue(itemXml, "excluUseAr")),
+          floor: parseIntSafe(getXmlTagValue(itemXml, "floor")),
+        };
+      }
+
+      if (rawKind === "house") {
+        return {
+          ...baseRow,
+          apt: getXmlTagValue(itemXml, "houseType") || "N/A",
+          area: parseFloatSafe(getXmlTagValue(itemXml, "totalFloorAr") || getXmlTagValue(itemXml, "excluUseAr")),
+          floor: 0,
+        };
+      }
+
+      return null;
+    })
+    .filter(Boolean);
+}
+
+// ── MCP fallback: 직접 data.go.kr API 호출 ──
+async function fetchDirectApiData(routeConfig, regionCode, yearMonth, numOfRows) {
+  const targetUrl = buildDataGoKrUrl(routeConfig.rawUrl, {
+    LAWD_CD: regionCode,
+    DEAL_YMD: yearMonth,
+    numOfRows: numOfRows,
+    pageNo: 1,
+  });
+
+  console.log(`[direct-api:${routeConfig.rawKind}] ${sanitizeUrl(targetUrl)}`);
+  const { body } = await fetchText(targetUrl);
+
+  let items;
+  if (routeConfig.kind === "trade") {
+    items = parseRawTradeRows(body, routeConfig.rawKind);
+    // trade items에 normalizeTradeItems와 동일한 형태 보장
+    items = items.map((row) => ({
+      apt: row.apt || "N/A",
+      dong: row.dong || "",
+      gu: row.dong || "",
+      price: row.price || 0,
+      area: row.area || 0,
+      floor: row.floor || 0,
+      date: row.date || "",
+      buildYear: row.buildYear || "",
+      dealType: row.dealType || "",
+      sigunguCd: row.sigunguCd || "",
+      bjdongCd: row.bjdongCd || "",
+      bun: row.bun || "",
+      ji: row.ji || "",
+      households: null,
+      completionYearMonth: formatCompletionYearMonth("", String(row.buildYear || "")),
+      nearbyStation: "",
+      nearbyStationDistanceKm: null,
+    }));
+  } else {
+    // rent
+    items = parseRawRentRows(body, routeConfig.rawKind);
+  }
+
+  return {
+    items,
+    total_count: items.length,
+    summary: routeConfig.kind === "trade" ? emptyTradeSummary() : emptyRentSummary(),
+  };
+}
+
 async function fetchRawTradeRowsPage(rawKind, regionCode, yearMonth, numOfRows, pageNo) {
   const targetUrl = buildDataGoKrUrl(API_URLS.aptTrade, {
     LAWD_CD: regionCode,
@@ -5735,6 +5853,7 @@ async function handleMcpRoute(routeConfig, searchParams, res) {
   }
 
   let payload;
+  let usedDirectFallback = false;
   try {
     payload = await callMcpTool(routeConfig.tool, {
       region_code: regionCode,
@@ -5742,15 +5861,32 @@ async function handleMcpRoute(routeConfig, searchParams, res) {
       num_of_rows: numOfRows,
     });
   } catch (error) {
-    sendJson(res, 503, {
-      error: "mcp_unavailable",
-      message: error.message,
-      source: SOURCE,
-    });
-    return;
+    // MCP 미연결 시 직접 API 호출 fallback
+    if (API_KEY && routeConfig.rawUrl) {
+      console.log(`[mcp-fallback] MCP unavailable, using direct API for ${routeConfig.tool}`);
+      try {
+        const directResult = await fetchDirectApiData(routeConfig, regionCode, yearMonth, numOfRows);
+        payload = directResult;
+        usedDirectFallback = true;
+      } catch (directError) {
+        sendJson(res, 503, {
+          error: "api_unavailable",
+          message: `MCP: ${error.message}; Direct: ${directError.message}`,
+          source: SOURCE,
+        });
+        return;
+      }
+    } else {
+      sendJson(res, 503, {
+        error: "mcp_unavailable",
+        message: error.message,
+        source: SOURCE,
+      });
+      return;
+    }
   }
 
-  if (payload?.error) {
+  if (payload?.error && !usedDirectFallback) {
     if (payload.error === "api_error" && payload.code === "03") {
       sendJson(res, 200, buildNoDataPayload(routeConfig.kind));
       return;
@@ -5769,7 +5905,9 @@ async function handleMcpRoute(routeConfig, searchParams, res) {
     (routeConfig.kind === "trade" ? emptyTradeSummary() : emptyRentSummary());
 
   if (routeConfig.kind === "trade") {
-    let items = normalizeTradeItems(routeConfig.rawKind, payload?.items || []);
+    let items = usedDirectFallback
+      ? (payload?.items || [])
+      : normalizeTradeItems(routeConfig.rawKind, payload?.items || []);
 
     if (API_KEY && routeConfig.rawUrl) {
       try {
@@ -5804,7 +5942,9 @@ async function handleMcpRoute(routeConfig, searchParams, res) {
     return;
   }
 
-  const items = normalizeRentItems(routeConfig.rawKind, payload?.items || []);
+  const items = usedDirectFallback
+    ? (payload?.items || [])
+    : normalizeRentItems(routeConfig.rawKind, payload?.items || []);
   const rentResult = {
     totalCount: totalCount || items.length,
     items,
