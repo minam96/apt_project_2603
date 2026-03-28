@@ -110,6 +110,32 @@ async function fetchTextWithVworldFallback(targetUrl, headers = {}) {
   }
 }
 
+// ── Kakao 지오코딩 (VWorld 해외 IP 차단 대체) ──
+const KAKAO_REST_API_KEY =
+  ENV_FILE.KAKAO_REST_API_KEY || process.env.KAKAO_REST_API_KEY || "";
+
+async function kakaoGeocode(address) {
+  if (!KAKAO_REST_API_KEY || !address) return null;
+  try {
+    const url = `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(address)}&size=1`;
+    const { body } = await fetchText(url, {
+      Authorization: `KakaoAK ${KAKAO_REST_API_KEY}`,
+    });
+    const parsed = JSON.parse(body);
+    const doc = parsed?.documents?.[0];
+    if (!doc) return null;
+    return {
+      lng: parseFloat(doc.x),
+      lat: parseFloat(doc.y),
+      address: doc.address_name || address,
+      bCode: doc.address?.b_code || "",
+    };
+  } catch (e) {
+    console.warn("[kakao-geocode]", e.message);
+    return null;
+  }
+}
+
 // ── Supabase VWorld 캐시 ──
 const SUPABASE_URL =
   ENV_FILE.SUPABASE_URL || process.env.SUPABASE_URL || "";
@@ -2479,6 +2505,31 @@ async function fetchVworldParcelForAddress(query) {
         },
     });
   } catch (error) {
+    // VWorld 실패 시 Kakao 지오코딩 폴백
+    if (KAKAO_REST_API_KEY) {
+      try {
+        const kakaoResult = await kakaoGeocode(normalizedQuery);
+        if (kakaoResult && kakaoResult.lat && kakaoResult.lng) {
+          console.log(`[kakao-fallback] ${normalizedQuery} → ${kakaoResult.lat},${kakaoResult.lng}`);
+          const bCode = kakaoResult.bCode || "";
+          return setTimedMapValue(vworldAddressCache, normalizedQuery, {
+            status: "ok",
+            query: normalizedQuery,
+            parcel: {
+              sigunguCd: bCode.slice(0, 5) || "",
+              bjdongCd: bCode.slice(5, 10) || "",
+              bun: "",
+              ji: "",
+              address: kakaoResult.address,
+              dongName: extractDongFromAddress(kakaoResult.address),
+              point: { x: kakaoResult.lng, y: kakaoResult.lat },
+            },
+          });
+        }
+      } catch (kakaoErr) {
+        console.warn("[kakao-fallback]", kakaoErr.message);
+      }
+    }
     return setTimedMapValue(vworldAddressCache, normalizedQuery, {
       status:
         error?.code === "ETIMEDOUT"
