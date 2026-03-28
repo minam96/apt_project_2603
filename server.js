@@ -7224,6 +7224,20 @@ const requestHandler = async (req, res) => {
       return;
     }
 
+    // 캐시 빌드 트리거 (비밀 토큰 보호)
+    if (requestUrl.pathname === "/api/build-cache") {
+      const token = requestUrl.searchParams.get("token") || "";
+      const CACHE_TOKEN = ENV_FILE.CACHE_TOKEN || process.env.CACHE_TOKEN || "";
+      if (!CACHE_TOKEN || token !== CACHE_TOKEN) {
+        sendJson(res, 403, { error: "forbidden" });
+        return;
+      }
+      // 비동기로 캐시 빌드 시작 (응답은 즉시 반환)
+      sendJson(res, 200, { status: "started" });
+      buildApartmentEnrichmentCache().catch(e => console.error("[cache-build]", e.message));
+      return;
+    }
+
     if (MCP_ROUTES[requestUrl.pathname]) {
       await handleMcpRoute(MCP_ROUTES[requestUrl.pathname], requestUrl.searchParams, res);
       return;
@@ -7320,6 +7334,112 @@ const requestHandler = async (req, res) => {
     });
   }
 };
+
+// ── 아파트 enrichment 캐시 빌드 (Render에서 실행) ──
+async function buildApartmentEnrichmentCache() {
+  const REGIONS = [
+    "11110","11140","11170","11200","11215","11230","11260","11290","11305","11320",
+    "11350","11380","11410","11440","11470","11500","11530","11545","11560","11590",
+    "11620","11650","11680","11710","11740",
+  ];
+  const months = [];
+  const now = new Date();
+  for (let i = 0; i < 3; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}`);
+  }
+
+  let total = 0, cached = 0;
+  let batch = [];
+
+  for (const regionCode of REGIONS) {
+    const aptMap = new Map();
+    for (const ym of months) {
+      try {
+        const { rows } = await fetchRawTradeRowsPage("apt", regionCode, ym, 1000, 1);
+        for (const r of rows) {
+          const key = `${regionCode}-${r.dong||""}-${r.apt||""}`.replace(/\s+/g,"");
+          if (!key || aptMap.has(key)) continue;
+          aptMap.set(key, r);
+        }
+      } catch {}
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    for (const [id, row] of aptMap) {
+      total++;
+      try {
+        // 좌표 획득 (Kakao)
+        let lat = null, lng = null;
+        const coord = await resolveApartmentCoordinate(row, regionCode);
+        if (coord) { lat = coord.lat; lng = coord.lng; }
+
+        // 근처 역
+        let station = null, stationDist = null;
+        if (coord) {
+          const nearest = findNearestStationForApartment(coord);
+          if (nearest && nearest.distanceKm <= 2) {
+            station = nearest.label || nearest.name || "";
+            stationDist = nearest.distanceKm;
+          }
+        }
+
+        // 용도지역 (Supabase vworld_cache에서)
+        let zoning = null;
+        const pnu = buildPnuFromSeed(row);
+        if (pnu) {
+          const sb = await supabaseGet(pnu);
+          if (sb?.land_use_zone) zoning = sb.land_use_zone;
+        }
+
+        batch.push({
+          id,
+          region_code: regionCode,
+          apt: row.apt || "",
+          dong: row.dong || "",
+          lat, lng,
+          nearby_station: station,
+          nearby_station_distance_km: stationDist,
+          zoning,
+          updated_at: new Date().toISOString(),
+        });
+        cached++;
+
+        if (batch.length >= 30) {
+          await supabaseUpsert_enrichment(batch);
+          console.log(`[cache-build] ${cached}/${total} saved`);
+          batch = [];
+        }
+      } catch {}
+    }
+    console.log(`[cache-build] region ${regionCode}: ${aptMap.size} apts`);
+  }
+
+  if (batch.length > 0) await supabaseUpsert_enrichment(batch);
+  console.log(`[cache-build] Done! ${cached}/${total} cached`);
+}
+
+async function supabaseUpsert_enrichment(rows) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !rows.length) return;
+  const parsed = new URL(`${SUPABASE_URL}/rest/v1/apartment_enrichment`);
+  const body = JSON.stringify(rows);
+  await new Promise((resolve, reject) => {
+    const req = https.request({
+      method: "POST", hostname: parsed.hostname, path: parsed.pathname,
+      headers: {
+        apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json", Prefer: "resolution=merge-duplicates",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    }, res => {
+      let d = ""; res.on("data", c => d += c);
+      res.on("end", () => res.statusCode < 400 ? resolve(d) : reject(new Error(`HTTP ${res.statusCode}`)));
+    });
+    req.on("error", reject);
+    req.setTimeout(10000, () => { req.destroy(new Error("timeout")); });
+    req.end(body);
+  });
+}
 
 // ── Serverless 감지: Vercel 환경에서는 listen/MCP 생략 ──
 const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
