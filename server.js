@@ -224,6 +224,27 @@ const SUPABASE_URL =
 const SUPABASE_ANON_KEY =
   ENV_FILE.SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
 
+// Supabase apartment_enrichment 조회 (좌표 + 근처역 + 용도지역)
+async function supabaseGetAptEnrichment(regionCode, dong, aptName) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !aptName) return null;
+  try {
+    const id = `${regionCode}-${dong}-${aptName}`.replace(/\s+/g, "");
+    const url = `${SUPABASE_URL}/rest/v1/apartment_enrichment?id=eq.${encodeURIComponent(id)}&select=*&limit=1`;
+    const { body } = await fetchText(url, {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    });
+    const rows = JSON.parse(body);
+    if (rows && rows.length > 0) {
+      const age = Date.now() - new Date(rows[0].updated_at).getTime();
+      if (age < 30 * 24 * 60 * 60 * 1000) return rows[0];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 const PNU_STRICT_REGEX = /^\d{19}$/;
 
 async function supabaseGet(pnu) {
@@ -3274,6 +3295,16 @@ async function resolveApartmentCoordinate(row, regionCode = "") {
     };
   }
 
+  // Supabase enrichment 캐시 조회 (좌표가 이미 있으면 즉시 반환)
+  const sbEnrich = await supabaseGetAptEnrichment(
+    regionCode || row?.sigunguCd || "",
+    row?.dong || "",
+    row?.apt || "",
+  );
+  if (sbEnrich && sbEnrich.lat && sbEnrich.lng) {
+    return { lng: sbEnrich.lng, lat: sbEnrich.lat };
+  }
+
   const addrQuery = buildApartmentAddressQuery(row, regionCode);
   const keywordQuery = buildApartmentKeywordQuery(row, regionCode);
   const cachedCoord = getPersistentApartmentCoordinate(
@@ -5966,18 +5997,31 @@ async function enrichTradeItems(rawKind, items, regionCode) {
     let nearbyStationDistanceKm = null;
 
     if (rawKind === "apt") {
-      const coord = await resolveApartmentCoordinate(row, regionCode);
+      // Supabase enrichment 캐시에서 근처 역 먼저 조회
+      const sbEnrich = await supabaseGetAptEnrichment(
+        regionCode || row?.sigunguCd || "",
+        row?.dong || "",
+        row?.apt || "",
+      );
+      if (sbEnrich && sbEnrich.nearby_station) {
+        nearbyStation = sbEnrich.nearby_station;
+        nearbyStationDistanceKm = sbEnrich.nearby_station_distance_km;
+      } else {
+        const coord = sbEnrich?.lat && sbEnrich?.lng
+          ? { lat: sbEnrich.lat, lng: sbEnrich.lng }
+          : await resolveApartmentCoordinate(row, regionCode);
 
-      const nearestStation = coord
-        ? findNearestStationForApartment(coord)
-        : null;
+        const nearestStation = coord
+          ? findNearestStationForApartment(coord)
+          : null;
 
-      if (nearestStation && nearestStation.distanceKm <= WALKING_DISTANCE_KM) {
-        nearbyStation = nearestStation.label || "";
-        nearbyStationDistanceKm = nearestStation.distanceKm;
-      } else if (nearestStation) {
-        nearbyStation = "";
-        nearbyStationDistanceKm = nearestStation.distanceKm;
+        if (nearestStation && nearestStation.distanceKm <= WALKING_DISTANCE_KM) {
+          nearbyStation = nearestStation.label || "";
+          nearbyStationDistanceKm = nearestStation.distanceKm;
+        } else if (nearestStation) {
+          nearbyStation = "";
+          nearbyStationDistanceKm = nearestStation.distanceKm;
+        }
       }
 
       if (nearbyStationDistanceKm == null) {
@@ -6100,17 +6144,31 @@ async function supplementFromKapt(snapshot, seed, regionCode, directoryState) {
 
     // seed PNU로 직접 용도지역 해소 (VWorld address lookup 실패 시 보완)
     if (isGenericZoneName(mergedSnapshot?.zoning)) {
-      const seedPnu = mergedSnapshot?.vworldPnu || buildPnuFromSeed(seed);
-      if (seedPnu) {
-        const landUseResult = await fetchVworldLandUseAttr(seedPnu);
-        if (landUseResult.status === "ok" && landUseResult.zoning && !isGenericZoneName(landUseResult.zoning)) {
-          console.log(`[vworld-zoning] refined "${mergedSnapshot.zoning}" → "${landUseResult.zoning}" for ${seed.apt} (PNU: ${seedPnu})`);
-          mergedSnapshot = {
-            ...mergedSnapshot,
-            zoning: landUseResult.zoning,
-            zoningSource: "vworld_landuse_attr_seed",
-            vworldPnu: seedPnu,
-          };
+      // 1) Supabase enrichment 캐시에서 용도지역 조회
+      const sbEnrich = await supabaseGetAptEnrichment(
+        seed?.sigunguCd || "",
+        seed?.dong || "",
+        seed?.apt || "",
+      );
+      if (sbEnrich?.zoning && !isGenericZoneName(sbEnrich.zoning)) {
+        mergedSnapshot = {
+          ...mergedSnapshot,
+          zoning: sbEnrich.zoning,
+          zoningSource: "supabase_enrichment",
+        };
+      } else {
+        // 2) VWorld/Supabase PNU 캐시
+        const seedPnu = mergedSnapshot?.vworldPnu || buildPnuFromSeed(seed);
+        if (seedPnu) {
+          const landUseResult = await fetchVworldLandUseAttr(seedPnu);
+          if (landUseResult.status === "ok" && landUseResult.zoning && !isGenericZoneName(landUseResult.zoning)) {
+            mergedSnapshot = {
+              ...mergedSnapshot,
+              zoning: landUseResult.zoning,
+              zoningSource: "vworld_landuse_attr_seed",
+              vworldPnu: seedPnu,
+            };
+          }
         }
       }
     }
