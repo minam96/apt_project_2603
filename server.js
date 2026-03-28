@@ -146,19 +146,36 @@ const PNU_STRICT_REGEX = /^\d{19}$/;
 
 async function supabaseGet(pnu) {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !pnu) return null;
-  // PNU 형식 검증 (19자리 숫자만 허용 — injection 방지)
-  if (!PNU_STRICT_REGEX.test(String(pnu))) return null;
+  const pnuStr = String(pnu);
+  // PNU 형식 검증 (10~19자리 숫자만 허용 — injection 방지)
+  if (!/^\d{10,19}$/.test(pnuStr)) return null;
   try {
-    const url = `${SUPABASE_URL}/rest/v1/vworld_cache?pnu=eq.${pnu}&select=pnu,land_use_zone,updated_at&limit=1`;
-    const { body } = await fetchText(url, {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    });
-    const rows = JSON.parse(body);
-    if (rows && rows.length > 0) {
-      // 30일 이내 데이터만 유효
-      const age = Date.now() - new Date(rows[0].updated_at).getTime();
-      if (age < 30 * 24 * 60 * 60 * 1000) return rows[0];
+    // 1) 정확 매칭 (19자리)
+    if (pnuStr.length === 19) {
+      const url = `${SUPABASE_URL}/rest/v1/vworld_cache?pnu=eq.${pnuStr}&select=pnu,land_use_zone,updated_at&limit=1`;
+      const { body } = await fetchText(url, {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      });
+      const rows = JSON.parse(body);
+      if (rows && rows.length > 0) {
+        const age = Date.now() - new Date(rows[0].updated_at).getTime();
+        if (age < 30 * 24 * 60 * 60 * 1000) return rows[0];
+      }
+    }
+    // 2) 법정동코드(10자리) 매칭 — 같은 동의 아무 PNU에서 용도지역 가져오기
+    const dongCode = pnuStr.slice(0, 10);
+    if (/^\d{10}$/.test(dongCode)) {
+      const url2 = `${SUPABASE_URL}/rest/v1/vworld_cache?pnu=like.${dongCode}*&land_use_zone=neq.null&select=pnu,land_use_zone,updated_at&limit=1`;
+      const { body: body2 } = await fetchText(url2, {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      });
+      const rows2 = JSON.parse(body2);
+      if (rows2 && rows2.length > 0) {
+        const age = Date.now() - new Date(rows2[0].updated_at).getTime();
+        if (age < 30 * 24 * 60 * 60 * 1000) return rows2[0];
+      }
     }
     return null;
   } catch {
