@@ -7228,13 +7228,23 @@ const requestHandler = async (req, res) => {
     if (requestUrl.pathname === "/api/build-cache") {
       const token = requestUrl.searchParams.get("token") || "";
       const CACHE_TOKEN = ENV_FILE.CACHE_TOKEN || process.env.CACHE_TOKEN || "";
-      if (!CACHE_TOKEN || token !== CACHE_TOKEN) {
+      // 타이밍 공격 방지: crypto.timingSafeEqual 사용
+      const a = Buffer.from(token);
+      const b = Buffer.from(CACHE_TOKEN);
+      if (!CACHE_TOKEN || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
         sendJson(res, 403, { error: "forbidden" });
         return;
       }
-      // 비동기로 캐시 빌드 시작 (응답은 즉시 반환)
+      // 동시 실행 방지
+      if (global.__cacheBuildRunning) {
+        sendJson(res, 429, { error: "already_running" });
+        return;
+      }
+      global.__cacheBuildRunning = true;
       sendJson(res, 200, { status: "started" });
-      buildApartmentEnrichmentCache().catch(e => console.error("[cache-build]", e.message));
+      buildApartmentEnrichmentCache()
+        .catch(e => console.error("[cache-build]", e.message))
+        .finally(() => { global.__cacheBuildRunning = false; });
       return;
     }
 
