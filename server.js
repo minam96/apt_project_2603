@@ -522,6 +522,7 @@ const buildingSnapshotCache = new Map();
 const apartmentDirectoryCache = new Map();
 const apartmentDetailCache = new Map();
 const apartmentCoordinatePersistentCache = new Map();
+const flatLandPersistentCache = new Map();
 const vworldAddressCache = new Map();
 const vworldZoningCache = new Map();
 
@@ -533,6 +534,11 @@ const APARTMENT_COORD_CACHE_FILE = path.join(
   PERSISTENT_CACHE_DIR,
   "apartment-coordinate-cache.json",
 );
+const FLAT_LAND_CACHE_FILE = path.join(
+  PERSISTENT_CACHE_DIR,
+  "flat-land.json",
+);
+const FLAT_LAND_PERSISTENT_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 
 function loadPersistentZoningCache() {
   try {
@@ -695,9 +701,102 @@ function schedulePersistentApartmentCoordinateSave() {
   }, 5000);
 }
 
+function loadPersistentFlatLandCache() {
+  try {
+    if (!fs.existsSync(FLAT_LAND_CACHE_FILE)) return;
+    const raw = fs.readFileSync(FLAT_LAND_CACHE_FILE, "utf-8");
+    const entries = JSON.parse(raw);
+    if (!Array.isArray(entries)) return;
+    const now = Date.now();
+    let loaded = 0;
+    for (const [key, entry] of entries) {
+      if (!key || !entry?.value) {
+        continue;
+      }
+      if (entry?.ts && now - entry.ts > FLAT_LAND_PERSISTENT_TTL_MS) {
+        continue;
+      }
+      const point = normalizeCoordinatePoint(entry.value);
+      const flatLandStatus = String(entry?.value?.flatLandStatus || "").trim();
+      const elevationRangeM = Number.parseFloat(
+        String(entry?.value?.elevationRangeM ?? ""),
+      );
+      if (!point || !["flat", "slope"].includes(flatLandStatus)) {
+        continue;
+      }
+      flatLandPersistentCache.set(key, {
+        ts: Number(entry?.ts) || now,
+        value: {
+          lng: point.lng,
+          lat: point.lat,
+          flatLandStatus,
+          elevationRangeM: Number.isFinite(elevationRangeM)
+            ? elevationRangeM
+            : null,
+        },
+      });
+      loaded++;
+    }
+    if (loaded > 0) {
+      console.log(
+        `[persistent-cache] loaded ${loaded} flat-land estimates from disk`,
+      );
+    }
+  } catch { /* silent */ }
+}
+
+function savePersistentFlatLandCache() {
+  try {
+    if (!fs.existsSync(PERSISTENT_CACHE_DIR)) {
+      fs.mkdirSync(PERSISTENT_CACHE_DIR, { recursive: true });
+    }
+    const entries = [...flatLandPersistentCache.entries()]
+      .map(([key, entry]) => {
+        const point = normalizeCoordinatePoint(entry?.value);
+        const flatLandStatus = String(entry?.value?.flatLandStatus || "").trim();
+        const elevationRangeM = Number.parseFloat(
+          String(entry?.value?.elevationRangeM ?? ""),
+        );
+        if (!key || !point || !["flat", "slope"].includes(flatLandStatus)) {
+          return null;
+        }
+        return [
+          key,
+          {
+            ts: Number(entry?.ts) || Date.now(),
+            value: {
+              lng: point.lng,
+              lat: point.lat,
+              flatLandStatus,
+              elevationRangeM: Number.isFinite(elevationRangeM)
+                ? elevationRangeM
+                : null,
+            },
+          },
+        ];
+      })
+      .filter(Boolean);
+    fs.writeFileSync(
+      FLAT_LAND_CACHE_FILE,
+      JSON.stringify(entries, null, 0),
+      "utf-8",
+    );
+  } catch { /* silent */ }
+}
+
+let _flatLandSaveTimer = null;
+function schedulePersistentFlatLandSave() {
+  if (_flatLandSaveTimer) return;
+  _flatLandSaveTimer = setTimeout(() => {
+    _flatLandSaveTimer = null;
+    savePersistentFlatLandCache();
+  }, 5000);
+}
+
 loadPersistentZoningCache();
 loadPersistentBuildingCache();
 loadPersistentApartmentCoordinateCache();
+loadPersistentFlatLandCache();
 const vworldPlaceCache = new Map();
 const elevationProfileCache = new Map();
 const buildingHubState = {
@@ -3628,6 +3727,65 @@ async function fetchNearbyPark(coord) {
   };
 }
 
+function buildFlatLandCacheKey(coord) {
+  const point = normalizeCoordinatePoint(coord);
+  if (!point) {
+    return "";
+  }
+  return `${roundNullable(point.lng, 5)}|${roundNullable(point.lat, 5)}`;
+}
+
+function getPersistentFlatLandEstimate(coord) {
+  const key = buildFlatLandCacheKey(coord);
+  if (!key) {
+    return null;
+  }
+  const entry = flatLandPersistentCache.get(key);
+  if (!entry) {
+    return null;
+  }
+  if (Date.now() - Number(entry.ts || 0) > FLAT_LAND_PERSISTENT_TTL_MS) {
+    flatLandPersistentCache.delete(key);
+    return null;
+  }
+  const point = normalizeCoordinatePoint(entry.value);
+  const flatLandStatus = String(entry?.value?.flatLandStatus || "").trim();
+  const elevationRangeM = Number.parseFloat(
+    String(entry?.value?.elevationRangeM ?? ""),
+  );
+  if (!point || !["flat", "slope"].includes(flatLandStatus)) {
+    flatLandPersistentCache.delete(key);
+    return null;
+  }
+  return {
+    flatLandStatus,
+    elevationRangeM: Number.isFinite(elevationRangeM) ? elevationRangeM : null,
+  };
+}
+
+function rememberPersistentFlatLandEstimate(coord, result) {
+  const key = buildFlatLandCacheKey(coord);
+  const point = normalizeCoordinatePoint(coord);
+  const flatLandStatus = String(result?.flatLandStatus || "").trim();
+  const elevationRangeM = Number.parseFloat(
+    String(result?.elevationRangeM ?? ""),
+  );
+  if (!key || !point || !["flat", "slope"].includes(flatLandStatus)) {
+    return result;
+  }
+  flatLandPersistentCache.set(key, {
+    ts: Date.now(),
+    value: {
+      lng: point.lng,
+      lat: point.lat,
+      flatLandStatus,
+      elevationRangeM: Number.isFinite(elevationRangeM) ? elevationRangeM : null,
+    },
+  });
+  schedulePersistentFlatLandSave();
+  return result;
+}
+
 function buildElevationSamplePoints(coord) {
   const point = normalizeCoordinatePoint(coord);
   if (!point) {
@@ -3696,6 +3854,10 @@ async function fetchElevationProfile(coord) {
 }
 
 async function estimateFlatLandStatus(coord) {
+  const cached = getPersistentFlatLandEstimate(coord);
+  if (cached) {
+    return cached;
+  }
   const profile = await fetchElevationProfile(coord);
   if (profile.status !== "ok" || profile.elevations.length < 5) {
     return {
@@ -3707,13 +3869,13 @@ async function estimateFlatLandStatus(coord) {
   const minElevation = Math.min(...profile.elevations);
   const maxElevation = Math.max(...profile.elevations);
   const elevationRangeM = roundNullable(maxElevation - minElevation, 1);
-  return {
+  return rememberPersistentFlatLandEstimate(coord, {
     flatLandStatus:
       elevationRangeM != null && elevationRangeM <= LOCATION_FLATNESS_MAX_RANGE_M
         ? "flat"
         : "slope",
     elevationRangeM,
-  };
+  });
 }
 
 async function buildListingLocationInsights(
