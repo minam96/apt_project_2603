@@ -6516,6 +6516,8 @@ async function handleConfig(res) {
       vworldData: Boolean(VWORLD_DATA_API_KEY),
       vworldLandUse: Boolean(VWORLD_LANDUSE_API_KEY),
       vworldDataDomain: VWORLD_DATA_DOMAIN || null,
+      kakaoGeocode: Boolean(KAKAO_REST_API_KEY),
+      supabaseCache: Boolean(SUPABASE_URL && SUPABASE_ANON_KEY),
       seoulBuilding: Boolean(SEOUL_BUILDING_API_KEY),
       seoulBuildingLoaded: seoulBuildingLoaded,
       seoulBuildingRecords: seoulBuildingIndex.size,
