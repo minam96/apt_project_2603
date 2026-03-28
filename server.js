@@ -224,18 +224,27 @@ async function searchKakaoNearbyPlaces(query, coord) {
 
 const SUPABASE_URL =
   ENV_FILE.SUPABASE_URL || process.env.SUPABASE_URL || "";
+const SUPABASE_SERVICE_ROLE_KEY =
+  ENV_FILE.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  "";
 const SUPABASE_ANON_KEY =
   ENV_FILE.SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+const SUPABASE_REST_KEY = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+
+function buildApartmentEnrichmentId(regionCode, dong, aptName) {
+  return `${regionCode || ""}-${dong || ""}-${aptName || ""}`.replace(/\s+/g, "");
+}
 
 // Supabase apartment_enrichment 조회 (좌표 + 근처역 + 용도지역)
 async function supabaseGetAptEnrichment(regionCode, dong, aptName) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !aptName) return null;
+  if (!SUPABASE_URL || !SUPABASE_REST_KEY || !aptName) return null;
   try {
-    const id = `${regionCode}-${dong}-${aptName}`.replace(/\s+/g, "");
+    const id = buildApartmentEnrichmentId(regionCode, dong, aptName);
     const url = `${SUPABASE_URL}/rest/v1/apartment_enrichment?id=eq.${encodeURIComponent(id)}&select=*&limit=1`;
     const { body } = await fetchText(url, {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      apikey: SUPABASE_REST_KEY,
+      Authorization: `Bearer ${SUPABASE_REST_KEY}`,
     });
     const rows = JSON.parse(body);
     if (rows && rows.length > 0) {
@@ -248,10 +257,89 @@ async function supabaseGetAptEnrichment(regionCode, dong, aptName) {
   }
 }
 
+function buildApartmentEnrichmentRow(row = {}) {
+  const id = buildApartmentEnrichmentId(row.region_code, row.dong, row.apt);
+  const toNumber = (value, digits = 4) => {
+    const parsed = Number.parseFloat(String(value ?? ""));
+    return Number.isFinite(parsed) ? roundNullable(parsed, digits) : null;
+  };
+  const toText = (value, maxLength = 200) => {
+    const normalized = String(value || "").trim();
+    return normalized ? normalized.slice(0, maxLength) : null;
+  };
+  return {
+    id,
+    region_code: String(row.region_code || "").trim(),
+    apt: String(row.apt || "").trim(),
+    dong: String(row.dong || "").trim(),
+    lat: toNumber(row.lat, 7),
+    lng: toNumber(row.lng, 7),
+    zoning: toText(row.zoning, 100),
+    zoning_source: toText(row.zoning_source, 80),
+    zoning_status: toText(row.zoning_status, 40),
+    nearby_station: toText(row.nearby_station),
+    nearby_station_distance_km: toNumber(row.nearby_station_distance_km),
+    nearby_elementary_school: toText(row.nearby_elementary_school),
+    nearby_elementary_school_distance_km: toNumber(
+      row.nearby_elementary_school_distance_km,
+    ),
+    nearby_elementary_school_status: toText(
+      row.nearby_elementary_school_status,
+      40,
+    ),
+    nearby_park: toText(row.nearby_park),
+    nearby_park_distance_km: toNumber(row.nearby_park_distance_km),
+    nearby_park_status: toText(row.nearby_park_status, 40),
+    flat_land_status: toText(row.flat_land_status, 40),
+    flat_land_elevation_range_m: toNumber(row.flat_land_elevation_range_m, 1),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function rememberApartmentEnrichment(row, regionCode, enrichment = {}) {
+  if (!SUPABASE_URL || !SUPABASE_REST_KEY) {
+    return;
+  }
+  const payload = buildApartmentEnrichmentRow({
+    region_code: regionCode || row?.sigunguCd || "",
+    apt: enrichment?.apt || row?.apt || "",
+    dong: enrichment?.dong || row?.dong || "",
+    lat: enrichment?.lat ?? row?.lat ?? null,
+    lng: enrichment?.lng ?? row?.lng ?? null,
+    zoning: enrichment?.zoning,
+    zoning_source: enrichment?.zoningSource ?? enrichment?.zoning_source,
+    zoning_status: enrichment?.zoningStatus ?? enrichment?.zoning_status,
+    nearby_station: enrichment?.nearbyStation ?? enrichment?.nearby_station,
+    nearby_station_distance_km:
+      enrichment?.nearbyStationDistanceKm ?? enrichment?.nearby_station_distance_km,
+    nearby_elementary_school:
+      enrichment?.nearbyElementarySchool ?? enrichment?.nearby_elementary_school,
+    nearby_elementary_school_distance_km:
+      enrichment?.nearbyElementarySchoolDistanceKm ??
+      enrichment?.nearby_elementary_school_distance_km,
+    nearby_elementary_school_status:
+      enrichment?.nearbyElementarySchoolStatus ??
+      enrichment?.nearby_elementary_school_status,
+    nearby_park: enrichment?.nearbyPark ?? enrichment?.nearby_park,
+    nearby_park_distance_km:
+      enrichment?.nearbyParkDistanceKm ?? enrichment?.nearby_park_distance_km,
+    nearby_park_status: enrichment?.nearbyParkStatus ?? enrichment?.nearby_park_status,
+    flat_land_status: enrichment?.flatLandStatus ?? enrichment?.flat_land_status,
+    flat_land_elevation_range_m:
+      enrichment?.flatLandElevationRangeM ?? enrichment?.flat_land_elevation_range_m,
+  });
+  if (!payload?.id) {
+    return;
+  }
+  supabaseUpsert_enrichment([payload]).catch((error) => {
+    console.warn("[supabase-enrichment]", error.message);
+  });
+}
+
 const PNU_STRICT_REGEX = /^\d{19}$/;
 
 async function supabaseGet(pnu) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !pnu) return null;
+  if (!SUPABASE_URL || !SUPABASE_REST_KEY || !pnu) return null;
   const pnuStr = String(pnu);
   // PNU 형식 검증 (10~19자리 숫자만 허용 — injection 방지)
   if (!/^\d{10,19}$/.test(pnuStr)) return null;
@@ -260,8 +348,8 @@ async function supabaseGet(pnu) {
     if (pnuStr.length === 19) {
       const url = `${SUPABASE_URL}/rest/v1/vworld_cache?pnu=eq.${pnuStr}&select=pnu,land_use_zone,updated_at&limit=1`;
       const { body } = await fetchText(url, {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_REST_KEY,
+        Authorization: `Bearer ${SUPABASE_REST_KEY}`,
       });
       const rows = JSON.parse(body);
       if (rows && rows.length > 0) {
@@ -274,8 +362,8 @@ async function supabaseGet(pnu) {
     if (/^\d{10}$/.test(dongCode)) {
       const url2 = `${SUPABASE_URL}/rest/v1/vworld_cache?pnu=like.${dongCode}*&land_use_zone=neq.null&select=pnu,land_use_zone,updated_at&limit=1`;
       const { body: body2 } = await fetchText(url2, {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_REST_KEY,
+        Authorization: `Bearer ${SUPABASE_REST_KEY}`,
       });
       const rows2 = JSON.parse(body2);
       if (rows2 && rows2.length > 0) {
@@ -290,7 +378,7 @@ async function supabaseGet(pnu) {
 }
 
 async function supabaseUpsert(pnu, data) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !pnu) return;
+  if (!SUPABASE_URL || !SUPABASE_REST_KEY || !pnu) return;
   if (!PNU_STRICT_REGEX.test(String(pnu))) return;
   try {
     // 허용 컬럼만 추출 (스키마 검증)
@@ -310,8 +398,8 @@ async function supabaseUpsert(pnu, data) {
           hostname: parsed.hostname,
           path: parsed.pathname,
           headers: {
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            apikey: SUPABASE_REST_KEY,
+            Authorization: `Bearer ${SUPABASE_REST_KEY}`,
             "Content-Type": "application/json",
             Prefer: "resolution=merge-duplicates",
             "Content-Length": Buffer.byteLength(body),
@@ -4001,6 +4089,36 @@ async function estimateFlatLandStatus(coord) {
   });
 }
 
+function buildCachedAmenityFromEnrichment(row, prefix) {
+  const label = String(row?.[prefix] || "").trim();
+  const distanceKm = roundNullable(
+    Number.parseFloat(String(row?.[`${prefix}_distance_km`] ?? "")),
+    3,
+  );
+  const status =
+    String(row?.[`${prefix}_status`] || "").trim() ||
+    (label ? "ok" : "unknown");
+  return {
+    label,
+    distanceKm,
+    status,
+  };
+}
+
+function buildCachedFlatLandFromEnrichment(row) {
+  const flatLandStatus = String(row?.flat_land_status || "").trim();
+  const elevationRangeM = roundNullable(
+    Number.parseFloat(String(row?.flat_land_elevation_range_m ?? "")),
+    1,
+  );
+  return {
+    flatLandStatus: ["flat", "slope"].includes(flatLandStatus)
+      ? flatLandStatus
+      : "unknown",
+    elevationRangeM,
+  };
+}
+
 async function buildListingLocationInsights(
   row,
   regionCode,
@@ -4012,6 +4130,12 @@ async function buildListingLocationInsights(
     row?.dong || "",
     row?.apt || "",
   ).catch(() => null);
+  const cachedSchool = buildCachedAmenityFromEnrichment(
+    sbEnrich,
+    "nearby_elementary_school",
+  );
+  const cachedPark = buildCachedAmenityFromEnrichment(sbEnrich, "nearby_park");
+  const cachedFlatLand = buildCachedFlatLandFromEnrichment(sbEnrich);
   const cachedCoord = normalizeCoordinatePoint(sbEnrich);
   const coord =
     cachedCoord ||
@@ -4038,18 +4162,25 @@ async function buildListingLocationInsights(
       String(sbEnrich?.nearby_station || "").trim() || kaptStation.label || "";
     const fallbackStationDistance =
       sbEnrich?.nearby_station_distance_km ?? kaptStation.distanceKm ?? null;
-    return {
+    const fallbackInsights = {
       nearbyStation: fallbackStationLabel,
       nearbyStationDistanceKm: fallbackStationDistance,
-      nearbyElementarySchool: "",
-      nearbyElementarySchoolDistanceKm: null,
-      nearbyElementarySchoolStatus: "unknown",
-      nearbyPark: "",
-      nearbyParkDistanceKm: null,
-      nearbyParkStatus: "unknown",
-      flatLandStatus: "unknown",
-      flatLandElevationRangeM: null,
+      nearbyElementarySchool: cachedSchool.label,
+      nearbyElementarySchoolDistanceKm: cachedSchool.distanceKm,
+      nearbyElementarySchoolStatus: cachedSchool.status,
+      nearbyPark: cachedPark.label,
+      nearbyParkDistanceKm: cachedPark.distanceKm,
+      nearbyParkStatus: cachedPark.status,
+      flatLandStatus: cachedFlatLand.flatLandStatus,
+      flatLandElevationRangeM: cachedFlatLand.elevationRangeM,
     };
+    rememberApartmentEnrichment(row, regionCode, {
+      ...fallbackInsights,
+      zoning: snapshot?.zoning || null,
+      zoningSource: snapshot?.zoningSource || null,
+      zoningStatus: snapshot?.zoningStatus || null,
+    });
+    return fallbackInsights;
   }
 
   const nearestStation = findNearestStationForApartment(coord);
@@ -4060,29 +4191,30 @@ async function buildListingLocationInsights(
   ]);
   const elementarySchool =
     elementarySchoolResult.status === "fulfilled"
-      ? elementarySchoolResult.value
-      : {
-          status: "unknown",
-          label: "",
-          distanceKm: null,
-        };
+      ? (
+          elementarySchoolResult.value?.label ||
+          elementarySchoolResult.value?.status === "ok"
+        )
+        ? elementarySchoolResult.value
+        : cachedSchool
+      : cachedSchool;
   const park =
     parkResult.status === "fulfilled"
-      ? parkResult.value
-      : {
-          status: "unknown",
-          label: "",
-          distanceKm: null,
-        };
+      ? (
+          parkResult.value?.label ||
+          parkResult.value?.status === "ok"
+        )
+        ? parkResult.value
+        : cachedPark
+      : cachedPark;
   const flatLand =
     flatLandResult.status === "fulfilled"
-      ? flatLandResult.value
-      : {
-          flatLandStatus: "unknown",
-          elevationRangeM: null,
-        };
+      ? ["flat", "slope"].includes(String(flatLandResult.value?.flatLandStatus || ""))
+        ? flatLandResult.value
+        : cachedFlatLand
+      : cachedFlatLand;
 
-  return {
+  const resolvedInsights = {
     nearbyStation:
       nearestStation && nearestStation.distanceKm <= WALKING_DISTANCE_KM
         ? nearestStation.label || ""
@@ -4097,6 +4229,15 @@ async function buildListingLocationInsights(
     flatLandStatus: flatLand.flatLandStatus,
     flatLandElevationRangeM: flatLand.elevationRangeM,
   };
+  rememberApartmentEnrichment(row, regionCode, {
+    ...resolvedInsights,
+    lat: coord.lat,
+    lng: coord.lng,
+    zoning: snapshot?.zoning || null,
+    zoningSource: snapshot?.zoningSource || null,
+    zoningStatus: snapshot?.zoningStatus || null,
+  });
+  return resolvedInsights;
 }
 
 function buildListingRowId(seed, regionCode) {
@@ -6514,6 +6655,13 @@ async function supplementFromKapt(snapshot, seed, regionCode, directoryState) {
     }
 
     if (mergedSnapshot !== snapshot) {
+      if (mergedSnapshot?.zoning) {
+        rememberApartmentEnrichment(seed, regionCode, {
+          zoning: mergedSnapshot.zoning,
+          zoningSource: mergedSnapshot.zoningSource || null,
+          zoningStatus: mergedSnapshot.zoningStatus || null,
+        });
+      }
       return {
         ...mergedSnapshot,
         kaptStatus:
@@ -6934,7 +7082,7 @@ async function handleConfig(res) {
       vworldLandUse: Boolean(VWORLD_LANDUSE_API_KEY),
       vworldDataDomain: VWORLD_DATA_DOMAIN || null,
       kakaoGeocode: Boolean(KAKAO_REST_API_KEY),
-      supabaseCache: Boolean(SUPABASE_URL && SUPABASE_ANON_KEY),
+      supabaseCache: Boolean(SUPABASE_URL && SUPABASE_REST_KEY),
       seoulBuilding: Boolean(SEOUL_BUILDING_API_KEY),
       seoulBuildingLoaded: seoulBuildingLoaded,
       seoulBuildingRecords: seoulBuildingIndex.size,
@@ -7792,10 +7940,18 @@ async function buildApartmentEnrichmentCache() {
       total++;
       try {
         // 좌표 획득 (Kakao)
+        const sbEnrich = await supabaseGetAptEnrichment(
+          regionCode || row?.sigunguCd || "",
+          row?.dong || "",
+          row?.apt || "",
+        ).catch(() => null);
         let lat = null, lng = null;
-        const coord = await resolveApartmentCoordinate(row, regionCode, {
-          allowKakao: false,
-        });
+        const coord =
+          normalizeCoordinatePoint(sbEnrich) ||
+          await resolveApartmentCoordinate(row, regionCode, {
+            allowKakao: false,
+            preloadedEnrichment: sbEnrich,
+          });
         if (coord) { lat = coord.lat; lng = coord.lng; }
 
         // 근처 역
@@ -7809,24 +7965,55 @@ async function buildApartmentEnrichmentCache() {
         }
 
         // 용도지역 (Supabase vworld_cache에서)
-        let zoning = null;
+        const locationInsights = await buildListingLocationInsights(
+          row,
+          regionCode,
+        ).catch(() => ({
+          nearbyStation: station || "",
+          nearbyStationDistanceKm: stationDist,
+          nearbyElementarySchool: "",
+          nearbyElementarySchoolDistanceKm: null,
+          nearbyElementarySchoolStatus: "unknown",
+          nearbyPark: "",
+          nearbyParkDistanceKm: null,
+          nearbyParkStatus: "unknown",
+          flatLandStatus: "unknown",
+          flatLandElevationRangeM: null,
+        }));
+        let zoning = String(sbEnrich?.zoning || "").trim() || null;
         const pnu = buildPnuFromSeed(row);
-        if (pnu) {
+        if ((!zoning || isGenericZoneName(zoning)) && pnu) {
           const sb = await supabaseGet(pnu);
-          if (sb?.land_use_zone) zoning = sb.land_use_zone;
+          if (sb?.land_use_zone) {
+            zoning = sb.land_use_zone;
+          } else {
+            const landUseResult = await fetchVworldLandUseAttr(pnu);
+            if (landUseResult.status === "ok" && landUseResult.zoning) {
+              zoning = landUseResult.zoning;
+            }
+          }
         }
 
-        batch.push({
-          id,
+        batch.push(buildApartmentEnrichmentRow({
           region_code: regionCode,
           apt: row.apt || "",
           dong: row.dong || "",
-          lat, lng,
-          nearby_station: station,
-          nearby_station_distance_km: stationDist,
+          lat,
+          lng,
+          nearby_station: locationInsights.nearbyStation,
+          nearby_station_distance_km: locationInsights.nearbyStationDistanceKm,
+          nearby_elementary_school: locationInsights.nearbyElementarySchool,
+          nearby_elementary_school_distance_km:
+            locationInsights.nearbyElementarySchoolDistanceKm,
+          nearby_elementary_school_status:
+            locationInsights.nearbyElementarySchoolStatus,
+          nearby_park: locationInsights.nearbyPark,
+          nearby_park_distance_km: locationInsights.nearbyParkDistanceKm,
+          nearby_park_status: locationInsights.nearbyParkStatus,
+          flat_land_status: locationInsights.flatLandStatus,
+          flat_land_elevation_range_m: locationInsights.flatLandElevationRangeM,
           zoning,
-          updated_at: new Date().toISOString(),
-        });
+        }));
         cached++;
 
         if (batch.length >= 30) {
@@ -7843,15 +8030,14 @@ async function buildApartmentEnrichmentCache() {
   console.log(`[cache-build] Done! ${cached}/${total} cached`);
 }
 
-async function supabaseUpsert_enrichment(rows) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !rows.length) return;
+async function postSupabaseEnrichmentRows(rows) {
   const parsed = new URL(`${SUPABASE_URL}/rest/v1/apartment_enrichment`);
   const body = JSON.stringify(rows);
   await new Promise((resolve, reject) => {
     const req = https.request({
       method: "POST", hostname: parsed.hostname, path: parsed.pathname,
       headers: {
-        apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_REST_KEY, Authorization: `Bearer ${SUPABASE_REST_KEY}`,
         "Content-Type": "application/json", Prefer: "resolution=merge-duplicates",
         "Content-Length": Buffer.byteLength(body),
       },
@@ -7863,6 +8049,35 @@ async function supabaseUpsert_enrichment(rows) {
     req.setTimeout(10000, () => { req.destroy(new Error("timeout")); });
     req.end(body);
   });
+}
+
+async function supabaseUpsert_enrichment(rows) {
+  if (!SUPABASE_URL || !SUPABASE_REST_KEY || !rows.length) return;
+  try {
+    await postSupabaseEnrichmentRows(rows);
+  } catch (error) {
+    const message = String(error?.message || "");
+    const schemaMismatch =
+      message.includes("PGRST") ||
+      message.includes("schema cache") ||
+      message.includes("column");
+    if (!schemaMismatch) {
+      throw error;
+    }
+    const legacyRows = rows.map((row) => ({
+      id: buildApartmentEnrichmentId(row.region_code, row.dong, row.apt),
+      region_code: String(row.region_code || "").trim(),
+      apt: String(row.apt || "").trim(),
+      dong: String(row.dong || "").trim(),
+      lat: row.lat ?? null,
+      lng: row.lng ?? null,
+      nearby_station: row.nearby_station ?? null,
+      nearby_station_distance_km: row.nearby_station_distance_km ?? null,
+      zoning: row.zoning ?? null,
+      updated_at: new Date().toISOString(),
+    }));
+    await postSupabaseEnrichmentRows(legacyRows);
+  }
 }
 
 // ── Serverless 감지: Vercel 환경에서는 listen/MCP 생략 ──

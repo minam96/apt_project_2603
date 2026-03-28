@@ -141,6 +141,74 @@ function buildParcelKey(dong, bun, ji) {
   return `${dongKey}|${bunKey}|${jiKey}`;
 }
 
+function xmlUnescape(value) {
+  return String(value || "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function getXmlTagValue(itemXml, tagName) {
+  const match = String(itemXml || "").match(
+    new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, "i"),
+  );
+  return match ? xmlUnescape(match[1].trim()) : "";
+}
+
+function extractXmlItems(xmlText) {
+  return String(xmlText || "").match(/<item>([\s\S]*?)<\/item>/gi) || [];
+}
+
+function parseXmlItemObject(itemXml) {
+  const xml = String(itemXml || "");
+  if (!xml) {
+    return null;
+  }
+  const object = {};
+  const tagPattern = /<([a-zA-Z0-9_]+)>([\s\S]*?)<\/\1>/g;
+  let match = null;
+  while ((match = tagPattern.exec(xml))) {
+    object[match[1]] = xmlUnescape(match[2].trim());
+  }
+  return Object.keys(object).length > 0 ? object : null;
+}
+
+function parseDataGoResponseItems(body) {
+  const text = String(body || "").trim();
+  if (!text) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    const bodyNode = parsed?.response?.body || {};
+    const itemCandidates = [
+      bodyNode?.items?.item,
+      bodyNode?.items,
+      bodyNode?.item,
+    ];
+    for (const candidate of itemCandidates) {
+      const normalized = toArray(candidate).filter(Boolean);
+      if (normalized.length > 0) {
+        return normalized;
+      }
+    }
+    return [];
+  } catch {
+    return extractXmlItems(text).map(parseXmlItemObject).filter(Boolean);
+  }
+}
+
+function tryParseJson(value) {
+  try {
+    return JSON.parse(String(value || ""));
+  } catch {
+    return null;
+  }
+}
+
 function extractDongFromAddress(value) {
   return (
     String(value || "")
@@ -206,6 +274,15 @@ function isRetryableError(error) {
 }
 
 async function fetchJson(url, options = {}) {
+  const text = await fetchTextResponse(url, options);
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+async function fetchTextResponse(url, options = {}) {
   const maxRetries = Math.max(
     0,
     Number.parseInt(String(options.maxRetries ?? 4), 10) || 4,
@@ -230,7 +307,7 @@ async function fetchJson(url, options = {}) {
         error.statusCode = response.status;
         throw error;
       }
-      return JSON.parse(text);
+      return text;
     } catch (error) {
       const shouldRetry =
         attempt < maxRetries &&
@@ -253,6 +330,54 @@ function toArray(value) {
   return [value];
 }
 
+function parseVworldAddressPayload(payload, fallbackAddress = "") {
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const status = String(payload?.response?.status || "").trim().toUpperCase();
+    if (status !== "OK") {
+      return null;
+    }
+
+    const point = payload?.response?.result?.point || {};
+    const lng = Number.parseFloat(String(point?.x || ""));
+    const lat = Number.parseFloat(String(point?.y || ""));
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return null;
+    }
+
+    const refined = payload?.response?.refined || {};
+    const structure = refined?.structure || {};
+    const parcel = parsePnuToParcel(structure?.level4LC || "");
+    return {
+      lat,
+      lng,
+      address: String(refined?.text || fallbackAddress).trim(),
+      dong: String(structure?.level4L || "").trim(),
+      bun: parcel.bun,
+      ji: parcel.ji,
+    };
+  }
+
+  const xmlText = String(payload || "");
+  const status = getXmlTagValue(xmlText, "status").toUpperCase();
+  if (status && status !== "OK") {
+    return null;
+  }
+  const lng = Number.parseFloat(getXmlTagValue(xmlText, "x"));
+  const lat = Number.parseFloat(getXmlTagValue(xmlText, "y"));
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+  const parcel = parsePnuToParcel(getXmlTagValue(xmlText, "level4LC"));
+  return {
+    lat,
+    lng,
+    address: getXmlTagValue(xmlText, "text") || String(fallbackAddress || "").trim(),
+    dong: getXmlTagValue(xmlText, "level4L"),
+    bun: parcel.bun,
+    ji: parcel.ji,
+  };
+}
+
 async function fetchKaptList(sigunguCode) {
   const items = [];
   const seenCodes = new Set();
@@ -268,11 +393,10 @@ async function fetchKaptList(sigunguCode) {
       _type: "json",
     });
 
-    const payload = await fetchJson(
+    const text = await fetchTextResponse(
       `https://apis.data.go.kr/1613000/AptListService3/getSigunguAptList3?${params.toString()}`,
     );
-    const body = payload?.response?.body || {};
-    const pageItems = toArray(body?.items || []);
+    const pageItems = parseDataGoResponseItems(text);
     for (const item of pageItems) {
       const kaptCode = String(item?.kaptCode || "").trim();
       if (kaptCode && !seenCodes.has(kaptCode)) {
@@ -305,10 +429,10 @@ async function fetchKaptBasicInfo(kaptCode) {
     _type: "json",
   });
 
-  const payload = await fetchJson(
+  const text = await fetchTextResponse(
     `https://apis.data.go.kr/1613000/AptBasisInfoServiceV4/getAphusBassInfoV4?${params.toString()}`,
   );
-  return payload?.response?.body?.item || null;
+  return parseDataGoResponseItems(text)[0] || null;
 }
 
 function stripComplexNameFromJibunAddress(address, aptName) {
@@ -400,33 +524,11 @@ async function geocodeWithVworldAddress(address, type) {
     params.set("domain", VWORLD_DATA_DOMAIN);
   }
 
-  const payload = await fetchJson(
+  const body = await fetchTextResponse(
     `https://api.vworld.kr/req/address?${params.toString()}`,
   );
-  const status = String(payload?.response?.status || "").trim().toUpperCase();
-  if (status !== "OK") {
-    return null;
-  }
-
-  const point = payload?.response?.result?.point || {};
-  const lng = Number.parseFloat(String(point?.x || ""));
-  const lat = Number.parseFloat(String(point?.y || ""));
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return null;
-  }
-
-  const refined = payload?.response?.refined || {};
-  const structure = refined?.structure || {};
-  const parcel = parsePnuToParcel(structure?.level4LC || "");
-
-  return {
-    lat,
-    lng,
-    address: String(refined?.text || address).trim(),
-    dong: String(structure?.level4L || "").trim(),
-    bun: parcel.bun,
-    ji: parcel.ji,
-  };
+  const payload = tryParseJson(body) || body;
+  return parseVworldAddressPayload(payload, address);
 }
 
 async function resolveCoordinateEntry(basicInfo, fallbackInfo) {
