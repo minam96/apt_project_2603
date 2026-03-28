@@ -124,11 +124,11 @@ async function supabaseGet(pnu) {
   if (!PNU_STRICT_REGEX.test(String(pnu))) return null;
   try {
     const url = `${SUPABASE_URL}/rest/v1/vworld_cache?pnu=eq.${pnu}&select=pnu,land_use_zone,updated_at&limit=1`;
-    const text = await fetchText(url, {
+    const { body } = await fetchText(url, {
       apikey: SUPABASE_ANON_KEY,
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
     });
-    const rows = JSON.parse(text);
+    const rows = JSON.parse(body);
     if (rows && rows.length > 0) {
       // 30일 이내 데이터만 유효
       const age = Date.now() - new Date(rows[0].updated_at).getTime();
