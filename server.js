@@ -110,6 +110,79 @@ async function fetchTextWithVworldFallback(targetUrl, headers = {}) {
   }
 }
 
+// ── Supabase VWorld 캐시 ──
+const SUPABASE_URL =
+  ENV_FILE.SUPABASE_URL || process.env.SUPABASE_URL || "";
+const SUPABASE_ANON_KEY =
+  ENV_FILE.SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+
+const PNU_STRICT_REGEX = /^\d{19}$/;
+
+async function supabaseGet(pnu) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !pnu) return null;
+  // PNU 형식 검증 (19자리 숫자만 허용 — injection 방지)
+  if (!PNU_STRICT_REGEX.test(String(pnu))) return null;
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/vworld_cache?pnu=eq.${pnu}&select=pnu,land_use_zone,updated_at&limit=1`;
+    const text = await fetchText(url, {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    });
+    const rows = JSON.parse(text);
+    if (rows && rows.length > 0) {
+      // 30일 이내 데이터만 유효
+      const age = Date.now() - new Date(rows[0].updated_at).getTime();
+      if (age < 30 * 24 * 60 * 60 * 1000) return rows[0];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function supabaseUpsert(pnu, data) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !pnu) return;
+  if (!PNU_STRICT_REGEX.test(String(pnu))) return;
+  try {
+    // 허용 컬럼만 추출 (스키마 검증)
+    const body = JSON.stringify({
+      pnu: String(pnu),
+      land_use_zone: typeof data.landUseZone === "string" ? data.landUseZone.slice(0, 100) : null,
+      land_use_detail: data.landUseDetail && typeof data.landUseDetail === "object" ? data.landUseDetail : null,
+      zoning_data: data.zoningData && typeof data.zoningData === "object" ? data.zoningData : null,
+      address_data: data.addressData && typeof data.addressData === "object" ? data.addressData : null,
+      updated_at: new Date().toISOString(),
+    });
+    const parsed = new URL(`${SUPABASE_URL}/rest/v1/vworld_cache`);
+    await new Promise((resolve, reject) => {
+      const req = https.request(
+        {
+          method: "POST",
+          hostname: parsed.hostname,
+          path: parsed.pathname,
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            "Content-Type": "application/json",
+            Prefer: "resolution=merge-duplicates",
+            "Content-Length": Buffer.byteLength(body),
+          },
+        },
+        (res) => {
+          let d = "";
+          res.on("data", (c) => (d += c));
+          res.on("end", () => (res.statusCode < 400 ? resolve(d) : reject(new Error(`HTTP ${res.statusCode}`))));
+        },
+      );
+      req.on("error", reject);
+      req.setTimeout(5000, () => { req.destroy(new Error("supabase timeout")); });
+      req.end(body);
+    });
+  } catch (e) {
+    console.warn("[supabase-cache] upsert error:", e.message);
+  }
+}
+
 // ── 서울 열린데이터 광장 API 키 ──
 const SEOUL_BUILDING_API_KEY =
   ENV_FILE.DATA_SEOUL_getLandUse ||
@@ -2164,6 +2237,14 @@ async function fetchVworldLandUseAttr(pnu) {
   const cached = getTimedMapValue(vworldZoningCache, cacheKey, VWORLD_ZONING_CACHE_TTL_MS);
   if (cached) return cached;
 
+  // Supabase 캐시 확인 (VWorld API 호출 전)
+  const sbRow = await supabaseGet(pnu);
+  if (sbRow && sbRow.land_use_zone) {
+    const result = { status: "ok", zoning: sbRow.land_use_zone };
+    setTimedMapValue(vworldZoningCache, cacheKey, result);
+    return result;
+  }
+
   const params = new URLSearchParams({
     key: VWORLD_LANDUSE_API_KEY,
     pnu: String(pnu),
@@ -2229,6 +2310,8 @@ async function fetchVworldLandUseAttr(pnu) {
       const result = { status: "ok", zoning: bestZoning };
       setTimedMapValue(vworldZoningCache, cacheKey, result);
       schedulePersistentZoningSave();
+      // Supabase에 캐시 저장 (비동기, 실패해도 무시)
+      supabaseUpsert(pnu, { landUseZone: bestZoning }).catch(() => {});
       return result;
     }
 
