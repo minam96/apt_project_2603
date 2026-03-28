@@ -2,7 +2,7 @@ services:
   - type: web
     name: apt-api
     runtime: node
-    buildCommand: npm install && npm run build:apt-coords-live -- --concurrency 3
+    buildCommand: npm install && npm run build:apt-coords-live
     startCommand: node server.js
     plan: free
     envVars:
@@ -36,6 +36,12 @@ services:
         sync: false
       - key: CACHE_TOKEN
         sync: false
+      - key: APT_COORD_REGION_PREFIX
+        value: "11"
+      - key: APT_COORD_CONCURRENCY
+        value: "1"
+      - key: APT_COORD_LIMIT
+        value: "0"
       - key: DATA_SEOUL_realestate
         sync: false
       - key: DATA_SEOUL_getLandUse

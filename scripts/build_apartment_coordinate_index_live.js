@@ -39,12 +39,28 @@ const DATA_GO_KR_API_KEY =
 const VWORLD_API_KEY = ENV.VWORLD_API_KEY || process.env.VWORLD_API_KEY || "";
 const VWORLD_DATA_DOMAIN =
   ENV.VWORLD_DATA_DOMAIN || process.env.VWORLD_DATA_DOMAIN || "";
+const DEFAULT_REGION_PREFIX =
+  ENV.APT_COORD_REGION_PREFIX ||
+  process.env.APT_COORD_REGION_PREFIX ||
+  "11";
+const DEFAULT_LIMIT =
+  Number.parseInt(
+    String(ENV.APT_COORD_LIMIT || process.env.APT_COORD_LIMIT || "0"),
+    10,
+  ) || 0;
+const DEFAULT_CONCURRENCY = Math.max(
+  1,
+  Number.parseInt(
+    String(ENV.APT_COORD_CONCURRENCY || process.env.APT_COORD_CONCURRENCY || "1"),
+    10,
+  ) || 1,
+);
 
 function parseArgs(argv) {
   const args = {
-    regionPrefix: "",
-    limit: 0,
-    concurrency: 3,
+    regionPrefix: DEFAULT_REGION_PREFIX,
+    limit: DEFAULT_LIMIT,
+    concurrency: DEFAULT_CONCURRENCY,
     out: OUTPUT_PATH,
   };
 
@@ -63,7 +79,8 @@ function parseArgs(argv) {
     if (current === "--concurrency") {
       args.concurrency = Math.max(
         1,
-        Number.parseInt(String(argv[i + 1] || "3"), 10) || 3,
+        Number.parseInt(String(argv[i + 1] || String(DEFAULT_CONCURRENCY)), 10) ||
+          DEFAULT_CONCURRENCY,
       );
       i += 1;
       continue;
@@ -507,7 +524,7 @@ async function main() {
   );
 
   console.log(
-    `[build:apt-coords-live] collecting KAPT codes for ${sigunguCodes.length} regions`,
+    `[build:apt-coords-live] collecting KAPT codes for ${sigunguCodes.length} regions (prefix=${args.regionPrefix || "all"}, concurrency=${args.concurrency}, limit=${args.limit || "none"})`,
   );
 
   const kaptMap = new Map();
