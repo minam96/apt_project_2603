@@ -2282,6 +2282,41 @@ async function fetchVworldLandUseAttr(pnu) {
       parsed?.landUses?.totalCount || parsed?.response?.totalCount || 0,
     );
     if (!Array.isArray(attrs) || attrs.length === 0 || totalCount === 0) {
+      // 19자리 PNU로 0건이면 → 10자리(법정동코드)로 재시도
+      const ldCode = String(pnu).slice(0, 10);
+      if (String(pnu).length === 19 && /^\d{10}$/.test(ldCode)) {
+        const fallbackParams = new URLSearchParams({
+          key: VWORLD_LANDUSE_API_KEY,
+          pnu: ldCode,
+          format: "json",
+          numOfRows: "50",
+          pageNo: "1",
+        });
+        if (VWORLD_DATA_DOMAIN) fallbackParams.set("domain", VWORLD_DATA_DOMAIN);
+        try {
+          const fbUrl = `https://api.vworld.kr/ned/data/getLandUseAttr?${fallbackParams}`;
+          const { body: fbBody } = await fetchTextWithVworldFallback(fbUrl);
+          if (fbBody) {
+            const fbParsed = JSON.parse(fbBody);
+            const fbAttrs = fbParsed?.landUses?.field || [];
+            // 해당 PNU에 해당하는 항목 또는 동 전체에서 용도지역 추출
+            const myAttrs = fbAttrs.filter((a) => String(a.pnu) === String(pnu));
+            const srcAttrs = myAttrs.length > 0 ? myAttrs : fbAttrs;
+            const fbIncluded = srcAttrs.filter((a) => String(a.cnflcAt) === "1");
+            const fbSource = fbIncluded.length > 0 ? fbIncluded : srcAttrs;
+            const fbZones = fbSource
+              .map((a) => (a.prposAreaDstrcCodeNm || "").trim())
+              .filter((n) => n && (n.includes("주거") || n.includes("상업") || n.includes("공업")));
+            const fbBest = fbZones.sort((a, b) => b.length - a.length)[0] || null;
+            if (fbBest) {
+              const result = { status: "ok", zoning: fbBest };
+              setTimedMapValue(vworldZoningCache, cacheKey, result);
+              supabaseUpsert(pnu, { landUseZone: fbBest }).catch(() => {});
+              return result;
+            }
+          }
+        } catch { /* 폴백 실패 시 no_match 반환 */ }
+      }
       const result = { status: "no_match", zoning: null };
       setTimedMapValue(vworldZoningCache, cacheKey, result);
       return result;
