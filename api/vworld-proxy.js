@@ -1,16 +1,8 @@
 // Vercel Serverless — VWorld API proxy (국내 엣지에서 호출)
 // Render(해외 IP)에서 VWorld 직접 호출이 차단될 때 사용
 
-const https = require("https");
-
 const ALLOWED_HOSTS = ["api.vworld.kr"];
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB
-
-// VWorld TLS renegotiation 대응 (CVE-2009-3555 — VWorld 레거시 TLS 전용)
-const agent = new https.Agent({
-  rejectUnauthorized: true,
-  secureOptions: require("crypto").constants.SSL_OP_LEGACY_SERVER_CONNECT,
-});
 
 module.exports = async function handler(req, res) {
   const targetUrl = req.query?.url || "";
@@ -42,7 +34,6 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  // URL parser differential 방지: 파싱된 컴포넌트에서 재구성
   // userinfo(@) 포함 시 차단
   if (parsed.username || parsed.password) {
     res.statusCode = 400;
@@ -59,64 +50,41 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  return new Promise((resolve) => {
-    const proxyReq = https.request(
-      {
-        hostname: parsed.hostname,
-        port: parsed.port || 443,
-        path: parsed.pathname + parsed.search,
-        method: "GET",
-        agent,
-        headers: { "User-Agent": "apt-dashboard/1.0" },
-        timeout: 15000,
-      },
-      (proxyRes) => {
-        // 리다이렉트 차단 (SSRF 우회 방지)
-        if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400) {
-          res.statusCode = 502;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "redirect_blocked" }));
-          resolve();
-          return;
-        }
+  try {
+    // Node 18+ 글로벌 fetch 사용 (TLS 레거시 문제 회피)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
-        let data = "";
-        proxyRes.setEncoding("utf8");
-        proxyRes.on("data", (chunk) => {
-          data += chunk;
-          if (data.length > MAX_RESPONSE_SIZE) {
-            proxyReq.destroy();
-            res.statusCode = 413;
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ error: "response_too_large" }));
-            resolve();
-          }
-        });
-        proxyRes.on("end", () => {
-          res.statusCode = proxyRes.statusCode || 200;
-          res.setHeader("Content-Type", proxyRes.headers["content-type"] || "application/json");
-          res.setHeader("Access-Control-Allow-Origin", "*");
-          res.end(data);
-          resolve();
-        });
-      },
-    );
-
-    proxyReq.on("error", (err) => {
-      res.statusCode = 502;
-      res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ error: "proxy_error", message: err.message }));
-      resolve();
+    const proxyRes = await fetch(parsed.toString(), {
+      method: "GET",
+      headers: { "User-Agent": "apt-dashboard/1.0" },
+      signal: controller.signal,
+      redirect: "error", // 리다이렉트 차단 (SSRF 방지)
     });
+    clearTimeout(timeout);
 
-    proxyReq.on("timeout", () => {
-      proxyReq.destroy();
+    const text = await proxyRes.text();
+
+    if (text.length > MAX_RESPONSE_SIZE) {
+      res.statusCode = 413;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "response_too_large" }));
+      return;
+    }
+
+    res.statusCode = proxyRes.status;
+    res.setHeader("Content-Type", proxyRes.headers.get("content-type") || "application/json");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.end(text);
+  } catch (err) {
+    if (err.name === "AbortError") {
       res.statusCode = 504;
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ error: "proxy_timeout" }));
-      resolve();
-    });
-
-    proxyReq.end();
-  });
+      return;
+    }
+    res.statusCode = 502;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "proxy_error", message: err.message }));
+  }
 };
