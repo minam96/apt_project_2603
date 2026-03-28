@@ -6570,13 +6570,16 @@ async function resolveListingLocationInsightsForIds(
         ...locationInsights,
       };
     } catch (error) {
+      console.warn(
+        `[location-insights] failed for ${id}: ${String(error?.message || "unknown_error")}`,
+      );
       return {
         id,
         ...buildResolvedListingLocationInsights({
           nearbyElementarySchoolStatus: "unknown",
           nearbyParkStatus: "unknown",
           flatLandStatus: "unknown",
-          locationInsightsError: String(error?.message || "unknown_error"),
+          locationInsightsError: "location_insights_unavailable",
         }),
       };
     }
@@ -7462,12 +7465,7 @@ const requestHandler = async (req, res) => {
       const headerToken = String(req.headers["x-cache-build-token"] || "").trim();
       const authHeader = String(req.headers.authorization || "").trim();
       const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-      const token =
-        headerToken ||
-        String(bearerMatch?.[1] || "").trim() ||
-        (process.env.NODE_ENV === "production" || ENV_FILE.NODE_ENV === "production"
-          ? ""
-          : String(requestUrl.searchParams.get("token") || "").trim());
+      const token = headerToken || String(bearerMatch?.[1] || "").trim();
       const CACHE_TOKEN = ENV_FILE.CACHE_TOKEN || process.env.CACHE_TOKEN || "";
       // 타이밍 공격 방지: crypto.timingSafeEqual 사용
       const a = Buffer.from(token);
