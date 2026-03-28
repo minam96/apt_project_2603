@@ -137,6 +137,88 @@ async function kakaoGeocode(address) {
 }
 
 // ── Supabase VWorld 캐시 ──
+async function kakaoKeywordSearch(query, options = {}) {
+  if (!KAKAO_REST_API_KEY || !query) return [];
+  try {
+    const params = new URLSearchParams({
+      query: String(query).trim(),
+      size: String(options.size || 15),
+    });
+
+    const x = parseCoordinate(options?.x);
+    const y = parseCoordinate(options?.y);
+    if (x != null && y != null) {
+      params.set("x", String(x));
+      params.set("y", String(y));
+      params.set("sort", String(options.sort || "distance"));
+      const radius = Number.parseInt(String(options.radius || 0), 10);
+      if (Number.isFinite(radius) && radius > 0) {
+        params.set("radius", String(Math.min(radius, 20000)));
+      }
+    }
+
+    const url = `https://dapi.kakao.com/v2/local/search/keyword.json?${params.toString()}`;
+    const { body } = await fetchText(url, {
+      Authorization: `KakaoAK ${KAKAO_REST_API_KEY}`,
+    });
+    const parsed = JSON.parse(body);
+    return toArray(parsed?.documents)
+      .map((doc) => {
+        const lng = parseCoordinate(doc?.x);
+        const lat = parseCoordinate(doc?.y);
+        if (lng == null || lat == null) {
+          return null;
+        }
+        return {
+          lng,
+          lat,
+          address:
+            String(
+              doc?.road_address_name || doc?.address_name || query,
+            ).trim() || String(query).trim(),
+          placeName: String(doc?.place_name || "").trim(),
+          category: String(doc?.category_name || "").trim(),
+          distanceM: Number.parseFloat(String(doc?.distance || "")),
+        };
+      })
+      .filter(Boolean);
+  } catch (error) {
+    console.warn("[kakao-keyword]", error.message);
+    return [];
+  }
+}
+
+async function searchKakaoNearbyPlaces(query, coord) {
+  const point = normalizeCoordinatePoint(coord);
+  if (!point) {
+    return {
+      status: "bad_request",
+      items: [],
+    };
+  }
+
+  const items = (await kakaoKeywordSearch(query, {
+    x: point.lng,
+    y: point.lat,
+    radius: 2000,
+    size: 15,
+    sort: "distance",
+  }))
+    .map((item) => ({
+      title: item.placeName || item.address || String(query).trim(),
+      category: item.category || String(query).trim(),
+      lng: item.lng,
+      lat: item.lat,
+    }))
+    .filter(Boolean);
+
+  return {
+    status: items.length > 0 ? "ok" : "no_match",
+    items,
+    source: "kakao",
+  };
+}
+
 const SUPABASE_URL =
   ENV_FILE.SUPABASE_URL || process.env.SUPABASE_URL || "";
 const SUPABASE_ANON_KEY =
@@ -415,6 +497,7 @@ const listingLocationInsightCache = new Map();
 const buildingSnapshotCache = new Map();
 const apartmentDirectoryCache = new Map();
 const apartmentDetailCache = new Map();
+const apartmentCoordinatePersistentCache = new Map();
 const vworldAddressCache = new Map();
 const vworldZoningCache = new Map();
 
@@ -422,6 +505,10 @@ const vworldZoningCache = new Map();
 const PERSISTENT_CACHE_DIR = path.join(__dirname, "data", "cache");
 const ZONING_CACHE_FILE = path.join(PERSISTENT_CACHE_DIR, "vworld-zoning.json");
 const BUILDING_CACHE_FILE = path.join(PERSISTENT_CACHE_DIR, "building-snapshot.json");
+const APARTMENT_COORD_CACHE_FILE = path.join(
+  PERSISTENT_CACHE_DIR,
+  "apartment-coordinate-cache.json",
+);
 
 function loadPersistentZoningCache() {
   try {
@@ -506,8 +593,87 @@ function schedulePersistentBuildingSave() {
 }
 
 // 서버 시작 시 로드
+function loadPersistentApartmentCoordinateCache() {
+  try {
+    if (!fs.existsSync(APARTMENT_COORD_CACHE_FILE)) return;
+    const raw = fs.readFileSync(APARTMENT_COORD_CACHE_FILE, "utf-8");
+    const entries = JSON.parse(raw);
+    if (!Array.isArray(entries)) return;
+    const now = Date.now();
+    let loaded = 0;
+    for (const [key, entry] of entries) {
+      if (!key || !entry?.value) {
+        continue;
+      }
+      if (entry?.ts && now - entry.ts > 90 * 24 * 60 * 60 * 1000) {
+        continue;
+      }
+      const point = normalizeCoordinatePoint(entry.value);
+      if (!point) {
+        continue;
+      }
+      apartmentCoordinatePersistentCache.set(key, {
+        ts: Number(entry?.ts) || now,
+        value: {
+          lng: point.lng,
+          lat: point.lat,
+          source: String(entry?.value?.source || "").trim() || null,
+        },
+      });
+      loaded++;
+    }
+    if (loaded > 0) {
+      console.log(
+        `[persistent-cache] loaded ${loaded} apartment coordinates from disk`,
+      );
+    }
+  } catch { /* silent */ }
+}
+
+function savePersistentApartmentCoordinateCache() {
+  try {
+    if (!fs.existsSync(PERSISTENT_CACHE_DIR)) {
+      fs.mkdirSync(PERSISTENT_CACHE_DIR, { recursive: true });
+    }
+    const entries = [...apartmentCoordinatePersistentCache.entries()]
+      .map(([key, entry]) => {
+        const point = normalizeCoordinatePoint(entry?.value);
+        if (!key || !point) {
+          return null;
+        }
+        return [
+          key,
+          {
+            ts: Number(entry?.ts) || Date.now(),
+            value: {
+              lng: point.lng,
+              lat: point.lat,
+              source: String(entry?.value?.source || "").trim() || null,
+            },
+          },
+        ];
+      })
+      .filter(Boolean);
+    fs.writeFileSync(
+      APARTMENT_COORD_CACHE_FILE,
+      JSON.stringify(entries, null, 0),
+      "utf-8",
+    );
+  } catch { /* silent */ }
+}
+
+let _apartmentCoordSaveTimer = null;
+function schedulePersistentApartmentCoordinateSave() {
+  if (_apartmentCoordSaveTimer) return;
+  _apartmentCoordSaveTimer = setTimeout(() => {
+    _apartmentCoordSaveTimer = null;
+    savePersistentApartmentCoordinateCache();
+  }, 5000);
+}
+
 loadPersistentZoningCache();
 loadPersistentBuildingCache();
+loadPersistentApartmentCoordinateCache();
 const vworldPlaceCache = new Map();
 const elevationProfileCache = new Map();
 const buildingHubState = {
@@ -2996,6 +3162,109 @@ function buildApartmentAddressQuery(row, regionCode = "") {
   return addrParts.join(" ").trim();
 }
 
+function buildApartmentKeywordQuery(row, regionCode = "") {
+  const sigunguCode = String(row?.sigunguCd || regionCode || "").slice(0, 5);
+  const regionFullName = REGION_CODE_NAME_MAP.get(sigunguCode) || "";
+  const dong = String(row?.dong || "").trim();
+  const apt = String(row?.apt || "").trim();
+  return [regionFullName, dong, apt].filter(Boolean).join(" ").trim();
+}
+
+function buildApartmentCoordinateCacheKeys(
+  row,
+  regionCode = "",
+  addressQuery = "",
+  keywordQuery = "",
+) {
+  const keys = [];
+  const parcelKey = buildParcelKey(row?.dong, row?.bun, row?.ji);
+  if (parcelKey) {
+    keys.push(`parcel:${parcelKey}`);
+  }
+
+  const aptNameKey = normalizeComplexNameKey(row?.apt);
+  const dongKey = normalizeText(row?.dong);
+  if (aptNameKey && dongKey) {
+    keys.push(`nameDong:${aptNameKey}|${dongKey}`);
+  }
+
+  const normalizedAddress = normalizeAddressQuery(addressQuery);
+  if (normalizedAddress && /\d/.test(normalizedAddress)) {
+    keys.push(`addr:${normalizedAddress}`);
+  }
+
+  const normalizedKeyword = normalizeAddressQuery(keywordQuery);
+  if (normalizedKeyword) {
+    keys.push(`keyword:${normalizedKeyword}`);
+  }
+
+  return [...new Set(keys)];
+}
+
+function getPersistentApartmentCoordinate(
+  row,
+  regionCode = "",
+  addressQuery = "",
+  keywordQuery = "",
+) {
+  const now = Date.now();
+  const keys = buildApartmentCoordinateCacheKeys(
+    row,
+    regionCode,
+    addressQuery,
+    keywordQuery,
+  );
+  for (const key of keys) {
+    const entry = apartmentCoordinatePersistentCache.get(key);
+    if (!entry) {
+      continue;
+    }
+    if (now - Number(entry.ts || 0) > 90 * 24 * 60 * 60 * 1000) {
+      apartmentCoordinatePersistentCache.delete(key);
+      continue;
+    }
+    const point = normalizeCoordinatePoint(entry.value);
+    if (point) {
+      return point;
+    }
+  }
+  return null;
+}
+
+function rememberPersistentApartmentCoordinate(
+  row,
+  regionCode = "",
+  coord,
+  options = {},
+) {
+  const point = normalizeCoordinatePoint(coord);
+  if (!point) {
+    return null;
+  }
+
+  const keys = buildApartmentCoordinateCacheKeys(
+    row,
+    regionCode,
+    options.addressQuery || "",
+    options.keywordQuery || "",
+  );
+  if (!keys.length) {
+    return point;
+  }
+
+  const entry = {
+    ts: Date.now(),
+    value: {
+      lng: point.lng,
+      lat: point.lat,
+      source: String(options.source || "").trim() || null,
+    },
+  };
+  keys.forEach((key) => apartmentCoordinatePersistentCache.set(key, entry));
+  schedulePersistentApartmentCoordinateSave();
+  return point;
+}
+
 async function resolveApartmentCoordinate(row, regionCode = "") {
   const localMatch = findApartmentCoordinateMatch(row);
   if (localMatch) {
@@ -3006,23 +3275,69 @@ async function resolveApartmentCoordinate(row, regionCode = "") {
   }
 
   const addrQuery = buildApartmentAddressQuery(row, regionCode);
-  if (!addrQuery) return null;
+  const keywordQuery = buildApartmentKeywordQuery(row, regionCode);
+  const cachedCoord = getPersistentApartmentCoordinate(
+    row,
+    regionCode,
+    addrQuery,
+    keywordQuery,
+  );
+  if (cachedCoord) {
+    return cachedCoord;
+  }
+  if (!addrQuery && !keywordQuery) return null;
 
   // VWorld 주소 검색 시도
-  if (VWORLD_API_KEY) {
+  if (VWORLD_API_KEY && addrQuery) {
     try {
       const parcelResult = await fetchVworldParcelForAddress(addrQuery);
       const coord = normalizeCoordinatePoint(parcelResult?.parcel?.point);
-      if (coord) return coord;
+      if (coord) {
+        return rememberPersistentApartmentCoordinate(row, regionCode, coord, {
+          source: "vworld_address",
+          addressQuery: addrQuery,
+          keywordQuery,
+        });
+      }
     } catch { /* VWorld 실패 → Kakao 폴백 */ }
   }
 
   // Kakao 지오코딩 직접 시도 (VWorld 키 없거나 실패 시)
   if (KAKAO_REST_API_KEY) {
+    const hasParcelHint =
+      String(row?.bun || "").trim() || String(row?.ji || "").trim();
+
+    if (!hasParcelHint && keywordQuery) {
+      const keywordMatch = (await kakaoKeywordSearch(keywordQuery, {
+        size: 5,
+      }))[0];
+      if (keywordMatch) {
+        return rememberPersistentApartmentCoordinate(
+          row,
+          regionCode,
+          { lng: keywordMatch.lng, lat: keywordMatch.lat },
+          {
+            source: "kakao_keyword",
+            addressQuery: addrQuery,
+            keywordQuery,
+          },
+        );
+      }
+    }
+
     try {
       const kakaoResult = await kakaoGeocode(addrQuery);
       if (kakaoResult && kakaoResult.lat && kakaoResult.lng) {
-        return { lng: kakaoResult.lng, lat: kakaoResult.lat };
+        return rememberPersistentApartmentCoordinate(
+          row,
+          regionCode,
+          { lng: kakaoResult.lng, lat: kakaoResult.lat },
+          {
+            source: "kakao_address",
+            addressQuery: addrQuery,
+            keywordQuery,
+          },
+        );
       }
     } catch { /* Kakao도 실패 */ }
   }
@@ -3148,7 +3463,7 @@ async function fetchNearbyVworldPlaces(query, coord) {
   });
 
   try {
-    const { body } = await fetchText(targetUrl, {
+    const { body } = await fetchTextWithVworldFallback(targetUrl, {
       Accept: "application/json, */*",
     });
     const parsed = JSON.parse(body);
@@ -3159,12 +3474,20 @@ async function fetchNearbyVworldPlaces(query, coord) {
             .map(normalizeVworldSearchItem)
             .filter(Boolean)
         : [];
+    if (items.length === 0 && KAKAO_REST_API_KEY) {
+      const kakaoFallback = await searchKakaoNearbyPlaces(query, point);
+      return setTimedMapValue(vworldPlaceCache, cacheKey, kakaoFallback);
+    }
     return setTimedMapValue(vworldPlaceCache, cacheKey, {
       status: items.length > 0 ? "ok" : status === "ok" ? "no_match" : status,
       items,
       message: parsed?.response?.error?.text || "",
     });
   } catch (error) {
+    if (KAKAO_REST_API_KEY) {
+      const kakaoFallback = await searchKakaoNearbyPlaces(query, point);
+      return setTimedMapValue(vworldPlaceCache, cacheKey, kakaoFallback);
+    }
     return setTimedMapValue(vworldPlaceCache, cacheKey, {
       status: "upstream_error",
       items: [],
@@ -3355,12 +3678,21 @@ async function estimateFlatLandStatus(coord) {
   };
 }
 
-async function buildListingLocationInsights(row, regionCode) {
+async function buildListingLocationInsights(
+  row,
+  regionCode,
+  snapshot = null,
+  directoryState = null,
+) {
   const coord = await resolveApartmentCoordinate(row, regionCode);
   if (!coord) {
+    const kaptStation = await resolveNearbyStationFromKapt(row, regionCode, {
+      matchedKaptCode: snapshot?.matchedKaptCode,
+      directoryState,
+    });
     return {
-      nearbyStation: "",
-      nearbyStationDistanceKm: null,
+      nearbyStation: kaptStation.label || "",
+      nearbyStationDistanceKm: kaptStation.distanceKm,
       nearbyElementarySchool: "",
       nearbyElementarySchoolDistanceKm: null,
       nearbyElementarySchoolStatus: "unknown",
@@ -5541,12 +5873,68 @@ async function getApartmentDetailForKaptCode(kaptCode) {
   }
 }
 
+async function resolveNearbyStationFromKapt(
+  row,
+  regionCode = "",
+  options = {},
+) {
+  let kaptCode = String(
+    options?.matchedKaptCode || row?.matchedKaptCode || "",
+  ).trim();
+
+  if (!kaptCode) {
+    const sigunguCode = String(row?.sigunguCd || regionCode || "").slice(0, 5);
+    if (!sigunguCode) {
+      return {
+        label: "",
+        distanceKm: null,
+        status: "bad_request",
+        matchedKaptCode: null,
+      };
+    }
+
+    const directoryState =
+      options?.directoryState || (await getApartmentDirectoryForRegion(sigunguCode));
+    if (directoryState?.status && directoryState.status !== "ok") {
+      return {
+        label: "",
+        distanceKm: null,
+        status: directoryState.status,
+        matchedKaptCode: null,
+      };
+    }
+
+    const match = findApartmentDirectoryMatch(directoryState?.entries || [], row);
+    if (!match?.kaptCode) {
+      return {
+        label: "",
+        distanceKm: null,
+        status: "no_match",
+        matchedKaptCode: null,
+      };
+    }
+    kaptCode = match.kaptCode;
+  }
+
+  const detail = await getApartmentDetailForKaptCode(kaptCode);
+  return {
+    label: String(detail?.station?.label || "").trim(),
+    distanceKm: detail?.station?.distanceKm ?? null,
+    status: detail?.status || "unknown",
+    matchedKaptCode: kaptCode,
+  };
+}
+
 async function enrichTradeItems(rawKind, items, regionCode) {
   if (!Array.isArray(items) || items.length === 0) {
     return [];
   }
 
   const snapshotPromiseCache = new Map();
+  const directoryStatePromise =
+    rawKind === "apt" && String(regionCode || "").trim()
+      ? getApartmentDirectoryForRegion(regionCode)
+      : Promise.resolve(null);
 
   function getSnapshotForRow(row) {
     const cacheKey = [
@@ -5569,6 +5957,8 @@ async function enrichTradeItems(rawKind, items, regionCode) {
 
   return asyncMapLimit(items, TRADE_ENRICH_CONCURRENCY, async (row) => {
     const buildingInfo = await getSnapshotForRow(row);
+    const directoryState =
+      rawKind === "apt" ? await directoryStatePromise : null;
     const completionYearMonth =
       buildingInfo?.completionYearMonth || formatCompletionYearMonth("", row?.buildYear);
 
@@ -5588,6 +5978,19 @@ async function enrichTradeItems(rawKind, items, regionCode) {
       } else if (nearestStation) {
         nearbyStation = "";
         nearbyStationDistanceKm = nearestStation.distanceKm;
+      }
+
+      if (nearbyStationDistanceKm == null) {
+        const kaptStation = await resolveNearbyStationFromKapt(row, regionCode, {
+          directoryState,
+          matchedKaptCode: buildingInfo?.matchedKaptCode,
+        });
+        if (kaptStation.label) {
+          nearbyStation = kaptStation.label;
+        }
+        if (kaptStation.distanceKm != null) {
+          nearbyStationDistanceKm = kaptStation.distanceKm;
+        }
       }
     }
 
@@ -5845,6 +6248,10 @@ async function resolveListingLocationInsightsForIds(
   ids = [],
 ) {
   const cacheEntry = await getListingCacheEntryForRegion(regionCode, searchQuery);
+  const directoryStatePromise =
+    String(regionCode || "").trim()
+      ? getApartmentDirectoryForRegion(regionCode)
+      : Promise.resolve(null);
   const uniqueIds = [...new Set(toArray(ids).map((id) => String(id || "").trim()).filter(Boolean))];
 
   return asyncMapLimit(uniqueIds, LISTING_ENRICH_CONCURRENCY, async (id) => {
@@ -5872,8 +6279,14 @@ async function resolveListingLocationInsightsForIds(
       };
     }
 
+    const directoryState = await directoryStatePromise;
     const locationInsights = buildResolvedListingLocationInsights(
-      await buildListingLocationInsights(rowContext.seed, regionCode),
+      await buildListingLocationInsights(
+        rowContext.seed,
+        regionCode,
+        rowContext.snapshot,
+        directoryState,
+      ),
     );
     setTimedMapValue(listingLocationInsightCache, id, locationInsights);
     return {
