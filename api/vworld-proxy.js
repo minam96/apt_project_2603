@@ -59,15 +59,14 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  // 파싱된 컴포넌트에서 안전한 URL 재구성
-  const safeUrl = parsed.toString();
-
   return new Promise((resolve) => {
     const proxyReq = https.request(
-      safeUrl,
       {
-        agent,
+        hostname: parsed.hostname,
+        port: parsed.port || 443,
+        path: parsed.pathname + parsed.search,
         method: "GET",
+        agent,
         headers: { "User-Agent": "apt-dashboard/1.0" },
         timeout: 15000,
       },
