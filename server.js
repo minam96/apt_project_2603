@@ -3006,16 +3006,28 @@ async function resolveApartmentCoordinate(row, regionCode = "") {
   }
 
   const addrQuery = buildApartmentAddressQuery(row, regionCode);
-  if (!addrQuery || !VWORLD_API_KEY) {
-    return null;
+  if (!addrQuery) return null;
+
+  // VWorld 주소 검색 시도
+  if (VWORLD_API_KEY) {
+    try {
+      const parcelResult = await fetchVworldParcelForAddress(addrQuery);
+      const coord = normalizeCoordinatePoint(parcelResult?.parcel?.point);
+      if (coord) return coord;
+    } catch { /* VWorld 실패 → Kakao 폴백 */ }
   }
 
-  try {
-    const parcelResult = await fetchVworldParcelForAddress(addrQuery);
-    return normalizeCoordinatePoint(parcelResult?.parcel?.point);
-  } catch {
-    return null;
+  // Kakao 지오코딩 직접 시도 (VWorld 키 없거나 실패 시)
+  if (KAKAO_REST_API_KEY) {
+    try {
+      const kakaoResult = await kakaoGeocode(addrQuery);
+      if (kakaoResult && kakaoResult.lat && kakaoResult.lng) {
+        return { lng: kakaoResult.lng, lat: kakaoResult.lat };
+      }
+    } catch { /* Kakao도 실패 */ }
   }
+
+  return null;
 }
 
 function haversineDistanceKm(lat1, lng1, lat2, lng2) {
