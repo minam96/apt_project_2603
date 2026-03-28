@@ -44,7 +44,7 @@ function parseArgs(argv) {
   const args = {
     regionPrefix: "",
     limit: 0,
-    concurrency: 5,
+    concurrency: 3,
     out: OUTPUT_PATH,
   };
 
@@ -63,7 +63,7 @@ function parseArgs(argv) {
     if (current === "--concurrency") {
       args.concurrency = Math.max(
         1,
-        Number.parseInt(String(argv[i + 1] || "5"), 10) || 5,
+        Number.parseInt(String(argv[i + 1] || "3"), 10) || 3,
       );
       i += 1;
       continue;
@@ -139,21 +139,74 @@ function parseRegionCodes(filePath) {
   return sigunguCodes;
 }
 
-async function fetchJson(url, options = {}) {
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      Accept: "application/json, text/plain, */*",
-      ...(options.headers || {}),
-    },
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} for ${url}`);
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function redactUrlForLog(url) {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return "[invalid-url]";
   }
-  return JSON.parse(text);
+}
+
+function isRetryableStatus(status) {
+  return status === 429 || status >= 500;
+}
+
+function isRetryableError(error) {
+  const code = String(error?.code || "").trim().toUpperCase();
+  return [
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "EAI_AGAIN",
+    "ETIMEDOUT",
+    "UND_ERR_CONNECT_TIMEOUT",
+  ].includes(code);
+}
+
+async function fetchJson(url, options = {}) {
+  const maxRetries = Math.max(
+    0,
+    Number.parseInt(String(options.maxRetries ?? 4), 10) || 4,
+  );
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          Accept: "application/json, text/plain, */*",
+          ...(options.headers || {}),
+        },
+      });
+      const text = await response.text();
+      if (!response.ok) {
+        const error = new Error(
+          `HTTP ${response.status} for ${redactUrlForLog(url)}`,
+        );
+        error.statusCode = response.status;
+        throw error;
+      }
+      return JSON.parse(text);
+    } catch (error) {
+      const shouldRetry =
+        attempt < maxRetries &&
+        (isRetryableStatus(Number(error?.statusCode || 0)) ||
+          isRetryableError(error));
+      if (!shouldRetry) {
+        throw error;
+      }
+      const backoffMs = Math.min(12000, 1200 * 2 ** attempt);
+      await sleep(backoffMs);
+    }
+  }
+
+  throw new Error(`Failed to fetch ${redactUrlForLog(url)}`);
 }
 
 function toArray(value) {

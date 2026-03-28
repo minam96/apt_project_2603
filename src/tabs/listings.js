@@ -723,9 +723,14 @@ export async function hydrateListingLocationInsights(pageRows) {
       });
 
       if (changed) {
+        const hasResolvedRows = state.listingData.some(
+          (candidate) =>
+            hasListingLocationInsightFields(candidate) &&
+            !isListingLocationInsightsPending(candidate),
+        );
         state.listingSummaryData = {
           ...(state.listingSummaryData || {}),
-          locationInsightsStatus: "upstream_error",
+          locationInsightsStatus: hasResolvedRows ? "partial" : "upstream_error",
         };
         renderListingTable();
         updateListingStatusNote(state.listingSummaryData);

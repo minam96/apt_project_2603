@@ -341,6 +341,9 @@ const SEOUL_REALESTATE_API_KEY =
 const PORT =
   Number.parseInt(process.env.PORT || ENV_FILE.PORT || `${DEFAULT_PORT}`, 10) ||
   DEFAULT_PORT;
+const CACHE_BUILD_ENABLED = /^(1|true|yes)$/i.test(
+  String(ENV_FILE.CACHE_BUILD_ENABLED || process.env.CACHE_BUILD_ENABLED || ""),
+);
 
 const API_URLS = {
   aptTrade:
@@ -3286,7 +3289,8 @@ function rememberPersistentApartmentCoordinate(
   return point;
 }
 
-async function resolveApartmentCoordinate(row, regionCode = "") {
+async function resolveApartmentCoordinate(row, regionCode = "", options = {}) {
+  const allowKakaoFallback = options.allowKakao !== false;
   const localMatch = findApartmentCoordinateMatch(row);
   if (localMatch) {
     return {
@@ -3296,11 +3300,14 @@ async function resolveApartmentCoordinate(row, regionCode = "") {
   }
 
   // Supabase enrichment 캐시 조회 (좌표가 이미 있으면 즉시 반환)
-  const sbEnrich = await supabaseGetAptEnrichment(
-    regionCode || row?.sigunguCd || "",
-    row?.dong || "",
-    row?.apt || "",
-  );
+  const sbEnrich =
+    options.preloadedEnrichment !== undefined
+      ? options.preloadedEnrichment
+      : await supabaseGetAptEnrichment(
+          regionCode || row?.sigunguCd || "",
+          row?.dong || "",
+          row?.apt || "",
+        );
   if (sbEnrich && sbEnrich.lat && sbEnrich.lng) {
     return { lng: sbEnrich.lng, lat: sbEnrich.lat };
   }
@@ -3334,7 +3341,7 @@ async function resolveApartmentCoordinate(row, regionCode = "") {
   }
 
   // Kakao 지오코딩 직접 시도 (VWorld 키 없거나 실패 시)
-  if (KAKAO_REST_API_KEY) {
+  if (allowKakaoFallback && KAKAO_REST_API_KEY) {
     const hasParcelHint =
       String(row?.bun || "").trim() || String(row?.ji || "").trim();
 
@@ -3715,15 +3722,40 @@ async function buildListingLocationInsights(
   snapshot = null,
   directoryState = null,
 ) {
-  const coord = await resolveApartmentCoordinate(row, regionCode);
-  if (!coord) {
-    const kaptStation = await resolveNearbyStationFromKapt(row, regionCode, {
-      matchedKaptCode: snapshot?.matchedKaptCode,
-      directoryState,
+  const sbEnrich = await supabaseGetAptEnrichment(
+    regionCode || row?.sigunguCd || "",
+    row?.dong || "",
+    row?.apt || "",
+  ).catch(() => null);
+  const cachedCoord = normalizeCoordinatePoint(sbEnrich);
+  const coord =
+    cachedCoord ||
+    await resolveApartmentCoordinate(row, regionCode, {
+      preloadedEnrichment: sbEnrich,
     });
+  if (!coord) {
+    let kaptStation = {
+      label: "",
+      distanceKm: null,
+    };
+    try {
+      kaptStation = await resolveNearbyStationFromKapt(row, regionCode, {
+        matchedKaptCode: snapshot?.matchedKaptCode,
+        directoryState,
+      });
+    } catch {
+      kaptStation = {
+        label: "",
+        distanceKm: null,
+      };
+    }
+    const fallbackStationLabel =
+      String(sbEnrich?.nearby_station || "").trim() || kaptStation.label || "";
+    const fallbackStationDistance =
+      sbEnrich?.nearby_station_distance_km ?? kaptStation.distanceKm ?? null;
     return {
-      nearbyStation: kaptStation.label || "",
-      nearbyStationDistanceKm: kaptStation.distanceKm,
+      nearbyStation: fallbackStationLabel,
+      nearbyStationDistanceKm: fallbackStationDistance,
       nearbyElementarySchool: "",
       nearbyElementarySchoolDistanceKm: null,
       nearbyElementarySchoolStatus: "unknown",
@@ -3736,11 +3768,34 @@ async function buildListingLocationInsights(
   }
 
   const nearestStation = findNearestStationForApartment(coord);
-  const [elementarySchool, park, flatLand] = await Promise.all([
+  const [elementarySchoolResult, parkResult, flatLandResult] = await Promise.allSettled([
     fetchNearbyElementarySchool(coord),
     fetchNearbyPark(coord),
     estimateFlatLandStatus(coord),
   ]);
+  const elementarySchool =
+    elementarySchoolResult.status === "fulfilled"
+      ? elementarySchoolResult.value
+      : {
+          status: "unknown",
+          label: "",
+          distanceKm: null,
+        };
+  const park =
+    parkResult.status === "fulfilled"
+      ? parkResult.value
+      : {
+          status: "unknown",
+          label: "",
+          distanceKm: null,
+        };
+  const flatLand =
+    flatLandResult.status === "fulfilled"
+      ? flatLandResult.value
+      : {
+          flatLandStatus: "unknown",
+          elevationRangeM: null,
+        };
 
   return {
     nearbyStation:
@@ -6143,7 +6198,7 @@ async function supplementFromKapt(snapshot, seed, regionCode, directoryState) {
     }
 
     // seed PNU로 직접 용도지역 해소 (VWorld address lookup 실패 시 보완)
-    if (isGenericZoneName(mergedSnapshot?.zoning)) {
+    if (!mergedSnapshot?.zoning || isGenericZoneName(mergedSnapshot?.zoning)) {
       // 1) Supabase enrichment 캐시에서 용도지역 조회
       const sbEnrich = await supabaseGetAptEnrichment(
         seed?.sigunguCd || "",
@@ -6313,44 +6368,56 @@ async function resolveListingLocationInsightsForIds(
   const uniqueIds = [...new Set(toArray(ids).map((id) => String(id || "").trim()).filter(Boolean))];
 
   return asyncMapLimit(uniqueIds, LISTING_ENRICH_CONCURRENCY, async (id) => {
-    const cached = getTimedMapValue(
-      listingLocationInsightCache,
-      id,
-      LISTING_LOCATION_INSIGHT_CACHE_TTL_MS,
-    );
-    if (cached) {
+    try {
+      const cached = getTimedMapValue(
+        listingLocationInsightCache,
+        id,
+        LISTING_LOCATION_INSIGHT_CACHE_TTL_MS,
+      );
+      if (cached) {
+        return {
+          id,
+          ...cached,
+        };
+      }
+
+      const rowContext = cacheEntry.rowContextsById.get(id);
+      if (!rowContext?.seed) {
+        return {
+          id,
+          ...buildResolvedListingLocationInsights({
+            nearbyElementarySchoolStatus: "unknown",
+            nearbyParkStatus: "unknown",
+            flatLandStatus: "unknown",
+          }),
+        };
+      }
+
+      const directoryState = await directoryStatePromise;
+      const locationInsights = buildResolvedListingLocationInsights(
+        await buildListingLocationInsights(
+          rowContext.seed,
+          regionCode,
+          rowContext.snapshot,
+          directoryState,
+        ),
+      );
+      setTimedMapValue(listingLocationInsightCache, id, locationInsights);
       return {
         id,
-        ...cached,
+        ...locationInsights,
       };
-    }
-
-    const rowContext = cacheEntry.rowContextsById.get(id);
-    if (!rowContext?.seed) {
+    } catch (error) {
       return {
         id,
         ...buildResolvedListingLocationInsights({
           nearbyElementarySchoolStatus: "unknown",
           nearbyParkStatus: "unknown",
           flatLandStatus: "unknown",
+          locationInsightsError: String(error?.message || "unknown_error"),
         }),
       };
     }
-
-    const directoryState = await directoryStatePromise;
-    const locationInsights = buildResolvedListingLocationInsights(
-      await buildListingLocationInsights(
-        rowContext.seed,
-        regionCode,
-        rowContext.snapshot,
-        directoryState,
-      ),
-    );
-    setTimedMapValue(listingLocationInsightCache, id, locationInsights);
-    return {
-      id,
-      ...locationInsights,
-    };
   });
 }
 
@@ -7226,7 +7293,19 @@ const requestHandler = async (req, res) => {
 
     // 캐시 빌드 트리거 (비밀 토큰 보호)
     if (requestUrl.pathname === "/api/build-cache") {
-      const token = requestUrl.searchParams.get("token") || "";
+      if (!CACHE_BUILD_ENABLED) {
+        sendText(res, 404, "Not Found");
+        return;
+      }
+      const headerToken = String(req.headers["x-cache-build-token"] || "").trim();
+      const authHeader = String(req.headers.authorization || "").trim();
+      const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+      const token =
+        headerToken ||
+        String(bearerMatch?.[1] || "").trim() ||
+        (process.env.NODE_ENV === "production" || ENV_FILE.NODE_ENV === "production"
+          ? ""
+          : String(requestUrl.searchParams.get("token") || "").trim());
       const CACHE_TOKEN = ENV_FILE.CACHE_TOKEN || process.env.CACHE_TOKEN || "";
       // 타이밍 공격 방지: crypto.timingSafeEqual 사용
       const a = Buffer.from(token);
@@ -7381,7 +7460,9 @@ async function buildApartmentEnrichmentCache() {
       try {
         // 좌표 획득 (Kakao)
         let lat = null, lng = null;
-        const coord = await resolveApartmentCoordinate(row, regionCode);
+        const coord = await resolveApartmentCoordinate(row, regionCode, {
+          allowKakao: false,
+        });
         if (coord) { lat = coord.lat; lng = coord.lng; }
 
         // 근처 역

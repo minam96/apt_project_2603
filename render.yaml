@@ -2,7 +2,7 @@ services:
   - type: web
     name: apt-api
     runtime: node
-    buildCommand: npm install
+    buildCommand: npm install && npm run build:apt-coords-live -- --concurrency 3
     startCommand: node server.js
     plan: free
     envVars:
@@ -18,7 +18,23 @@ services:
         sync: false
       - key: VWORLD_API_KEY
         sync: false
+      - key: VWORLD_DATA_API_KEY
+        sync: false
       - key: VWORLD_API_KEY_getLandUse
+        sync: false
+      - key: VWORLD_DATA_DOMAIN
+        sync: false
+      - key: VWORLD_PROXY_BASE
+        sync: false
+      - key: KAKAO_REST_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: CACHE_BUILD_ENABLED
+        sync: false
+      - key: CACHE_TOKEN
         sync: false
       - key: DATA_SEOUL_realestate
         sync: false
