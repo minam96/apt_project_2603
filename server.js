@@ -3,6 +3,9 @@ const https = require("https");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const {
+  buildApartmentCoordinateIndex,
+} = require("./scripts/build_apartment_coordinate_index_live.js");
 
 const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
 const {
@@ -343,6 +346,23 @@ const PORT =
   DEFAULT_PORT;
 const CACHE_BUILD_ENABLED = /^(1|true|yes)$/i.test(
   String(ENV_FILE.CACHE_BUILD_ENABLED || process.env.CACHE_BUILD_ENABLED || ""),
+);
+const APT_COORD_REGION_PREFIX = String(
+  ENV_FILE.APT_COORD_REGION_PREFIX || process.env.APT_COORD_REGION_PREFIX || "11",
+).trim();
+const APT_COORD_CONCURRENCY = Math.max(
+  1,
+  Number.parseInt(
+    String(ENV_FILE.APT_COORD_CONCURRENCY || process.env.APT_COORD_CONCURRENCY || "1"),
+    10,
+  ) || 1,
+);
+const APT_COORD_LIMIT = Math.max(
+  0,
+  Number.parseInt(
+    String(ENV_FILE.APT_COORD_LIMIT || process.env.APT_COORD_LIMIT || "0"),
+    10,
+  ) || 0,
 );
 
 const API_URLS = {
@@ -831,6 +851,16 @@ const localDataState = {
     byNameDong: new Map(),
   },
 };
+const adminBuildState = {
+  apartmentCoords: {
+    running: false,
+    lastStatus: "idle",
+    startedAt: null,
+    finishedAt: null,
+    lastResult: null,
+    lastError: null,
+  },
+};
 
 const apiCache = new Map();
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -919,6 +949,25 @@ function sendText(res, statusCode, text) {
     "Content-Type": "text/plain; charset=utf-8",
   });
   res.end(text);
+}
+
+function getAdminBuildToken(req) {
+  const headerToken = String(req.headers["x-cache-build-token"] || "").trim();
+  const authHeader = String(req.headers.authorization || "").trim();
+  const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+  return headerToken || String(bearerMatch?.[1] || "").trim();
+}
+
+function isAuthorizedAdminBuildRequest(req) {
+  const token = getAdminBuildToken(req);
+  const cacheToken = ENV_FILE.CACHE_TOKEN || process.env.CACHE_TOKEN || "";
+  const a = Buffer.from(token);
+  const b = Buffer.from(cacheToken);
+  return Boolean(
+    cacheToken &&
+      a.length === b.length &&
+      crypto.timingSafeEqual(a, b),
+  );
 }
 
 function parsePositiveInt(value, fallback) {
@@ -3255,6 +3304,80 @@ function loadApartmentCoordinateDataset() {
         : error.message;
   }
   return state;
+}
+
+function invalidateApartmentCoordinateDatasetState() {
+  const state = localDataState.apartmentCoords;
+  state.checkedAtMs = 0;
+  state.mtimeMs = null;
+}
+
+function summarizeApartmentCoordinateBuildState(datasetState = loadApartmentCoordinateDataset()) {
+  return {
+    enabled: CACHE_BUILD_ENABLED,
+    running: adminBuildState.apartmentCoords.running,
+    lastStatus: adminBuildState.apartmentCoords.lastStatus,
+    startedAt: adminBuildState.apartmentCoords.startedAt,
+    finishedAt: adminBuildState.apartmentCoords.finishedAt,
+    defaults: {
+      regionPrefix: APT_COORD_REGION_PREFIX || null,
+      concurrency: APT_COORD_CONCURRENCY,
+      limit: APT_COORD_LIMIT,
+    },
+    dataset: {
+      available: datasetState.items.length > 0,
+      count: datasetState.items.length,
+      message: datasetState.message,
+    },
+  };
+}
+
+function startApartmentCoordinateDatasetBuild() {
+  if (adminBuildState.apartmentCoords.running) {
+    return false;
+  }
+  adminBuildState.apartmentCoords.running = true;
+  adminBuildState.apartmentCoords.lastStatus = "running";
+  adminBuildState.apartmentCoords.startedAt = new Date().toISOString();
+  adminBuildState.apartmentCoords.finishedAt = null;
+  adminBuildState.apartmentCoords.lastResult = null;
+  adminBuildState.apartmentCoords.lastError = null;
+
+  buildApartmentCoordinateIndex(
+    {
+      regionPrefix: APT_COORD_REGION_PREFIX,
+      concurrency: APT_COORD_CONCURRENCY,
+      limit: APT_COORD_LIMIT,
+      out: APARTMENT_COORD_DATA_FILE,
+    },
+    {
+      log: (message) => console.log(message),
+      warn: (message) => console.warn(message),
+    },
+  )
+    .then((result) => {
+      invalidateApartmentCoordinateDatasetState();
+      const dataset = loadApartmentCoordinateDataset();
+      adminBuildState.apartmentCoords.lastStatus = "succeeded";
+      adminBuildState.apartmentCoords.lastResult = {
+        ...result,
+        datasetCount: dataset.items.length,
+        datasetMessage: dataset.message,
+      };
+    })
+    .catch((error) => {
+      adminBuildState.apartmentCoords.lastStatus = "failed";
+      adminBuildState.apartmentCoords.lastError = String(error?.message || "unknown_error");
+      console.error(
+        `[build:apt-coords-live] ${adminBuildState.apartmentCoords.lastError}`,
+      );
+    })
+    .finally(() => {
+      adminBuildState.apartmentCoords.running = false;
+      adminBuildState.apartmentCoords.finishedAt = new Date().toISOString();
+    });
+
+  return true;
 }
 
 function findApartmentCoordinateMatch(row) {
@@ -6786,18 +6909,22 @@ async function handleConfig(res) {
     message = error.message;
   }
 
+  const stationDataset = loadStationDataset();
+  const apartmentCoordDataset = loadApartmentCoordinateDataset();
+
   sendJson(res, 200, {
     connected,
     source: SOURCE,
     transport: "stdio",
     datasets: {
       stations: {
-        available: loadStationDataset().items.length > 0,
-        message: loadStationDataset().message,
+        available: stationDataset.items.length > 0,
+        message: stationDataset.message,
       },
       apartmentCoords: {
-        available: loadApartmentCoordinateDataset().items.length > 0,
-        message: loadApartmentCoordinateDataset().message,
+        available: apartmentCoordDataset.items.length > 0,
+        message: apartmentCoordDataset.message,
+        build: summarizeApartmentCoordinateBuildState(apartmentCoordDataset),
       },
     },
     integrations: {
@@ -7402,6 +7529,7 @@ function handleRoot(res) {
     "/api/vworld/address?q=<address>",
     "/api/vworld/zoning?q=<address> | lng=<x>&lat=<y>",
     "/api/config",
+    "/api/build-apt-coords?status=1|force=1 (protected)",
     "/calc.html",
   ].join("\n  ");
 
@@ -7462,6 +7590,14 @@ const requestHandler = async (req, res) => {
         sendText(res, 404, "Not Found");
         return;
       }
+      if (!isAuthorizedAdminBuildRequest(req)) {
+        sendJson(res, 403, { error: "forbidden" });
+        return;
+      }
+      if (adminBuildState.apartmentCoords.running) {
+        sendJson(res, 429, { error: "already_running" });
+        return;
+      }
       const headerToken = String(req.headers["x-cache-build-token"] || "").trim();
       const authHeader = String(req.headers.authorization || "").trim();
       const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
@@ -7484,6 +7620,43 @@ const requestHandler = async (req, res) => {
       buildApartmentEnrichmentCache()
         .catch(e => console.error("[cache-build]", e.message))
         .finally(() => { global.__cacheBuildRunning = false; });
+      return;
+    }
+
+    if (requestUrl.pathname === "/api/build-apt-coords") {
+      if (!CACHE_BUILD_ENABLED) {
+        sendText(res, 404, "Not Found");
+        return;
+      }
+      if (!isAuthorizedAdminBuildRequest(req)) {
+        sendJson(res, 403, { error: "forbidden" });
+        return;
+      }
+      if (/^(1|true|yes)$/i.test(String(requestUrl.searchParams.get("status") || ""))) {
+        sendJson(res, 200, summarizeApartmentCoordinateBuildState());
+        return;
+      }
+      if (adminBuildState.apartmentCoords.running || global.__cacheBuildRunning) {
+        sendJson(res, 202, {
+          status: "already_running",
+          build: summarizeApartmentCoordinateBuildState(),
+        });
+        return;
+      }
+      const force = /^(1|true|yes)$/i.test(String(requestUrl.searchParams.get("force") || ""));
+      const dataset = loadApartmentCoordinateDataset();
+      if (!force && dataset.items.length > 0) {
+        sendJson(res, 200, {
+          status: "already_available",
+          build: summarizeApartmentCoordinateBuildState(dataset),
+        });
+        return;
+      }
+      startApartmentCoordinateDatasetBuild();
+      sendJson(res, 202, {
+        status: "started",
+        build: summarizeApartmentCoordinateBuildState(),
+      });
       return;
     }
 

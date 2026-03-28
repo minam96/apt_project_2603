@@ -94,6 +94,27 @@ function parseArgs(argv) {
   return args;
 }
 
+function normalizeBuildOptions(options = {}) {
+  return {
+    regionPrefix:
+      options.regionPrefix == null
+        ? DEFAULT_REGION_PREFIX
+        : String(options.regionPrefix || "").trim(),
+    limit:
+      options.limit == null
+        ? DEFAULT_LIMIT
+        : Math.max(0, Number.parseInt(String(options.limit), 10) || 0),
+    concurrency:
+      options.concurrency == null
+        ? DEFAULT_CONCURRENCY
+        : Math.max(1, Number.parseInt(String(options.concurrency), 10) || DEFAULT_CONCURRENCY),
+    out:
+      options.out == null
+        ? OUTPUT_PATH
+        : path.resolve(ROOT, String(options.out || OUTPUT_PATH)),
+  };
+}
+
 function normalizeText(value) {
   return String(value || "")
     .trim()
@@ -510,7 +531,7 @@ async function asyncMapPool(items, concurrency, worker) {
   return results;
 }
 
-async function main() {
+async function buildApartmentCoordinateIndex(options = {}, runtime = {}) {
   if (!DATA_GO_KR_API_KEY) {
     throw new Error("DATA_GO_KR_API_KEY or MOLIT_API_KEY is required.");
   }
@@ -518,12 +539,14 @@ async function main() {
     throw new Error("VWORLD_API_KEY is required.");
   }
 
-  const args = parseArgs(process.argv.slice(2));
+  const args = normalizeBuildOptions(options);
+  const log = typeof runtime.log === "function" ? runtime.log : console.log;
+  const warn = typeof runtime.warn === "function" ? runtime.warn : console.warn;
   const sigunguCodes = parseRegionCodes(REGION_CODES_PATH).filter((code) =>
     args.regionPrefix ? code.startsWith(args.regionPrefix) : true,
   );
 
-  console.log(
+  log(
     `[build:apt-coords-live] collecting KAPT codes for ${sigunguCodes.length} regions (prefix=${args.regionPrefix || "all"}, concurrency=${args.concurrency}, limit=${args.limit || "none"})`,
   );
 
@@ -535,7 +558,7 @@ async function main() {
         kaptMap.set(item.kaptCode, item);
       }
     });
-    console.log(
+    log(
       `[build:apt-coords-live] ${sigunguCode}: ${items.length} complexes`,
     );
   }
@@ -545,7 +568,7 @@ async function main() {
     complexes = complexes.slice(0, args.limit);
   }
 
-  console.log(
+  log(
     `[build:apt-coords-live] resolving coordinates for ${complexes.length} complexes`,
   );
 
@@ -564,14 +587,14 @@ async function main() {
           failureCount += 1;
         }
         if ((index + 1) % 100 === 0 || index + 1 === complexes.length) {
-          console.log(
+          log(
             `[build:apt-coords-live] progress ${index + 1}/${complexes.length} success=${successCount} fail=${failureCount}`,
           );
         }
         return entry;
       } catch (error) {
         failureCount += 1;
-        console.warn(
+        warn(
           `[build:apt-coords-live] failed ${item.kaptCode} ${item.kaptName}: ${error.message}`,
         );
         return null;
@@ -595,12 +618,36 @@ async function main() {
     "utf8",
   );
 
-  console.log(
+  log(
     `[build:apt-coords-live] saved ${unique.length} coordinates to ${args.out}`,
   );
+
+  return {
+    out: args.out,
+    regionPrefix: args.regionPrefix || "",
+    limit: args.limit,
+    concurrency: args.concurrency,
+    count: unique.length,
+    successCount,
+    failureCount,
+  };
 }
 
-main().catch((error) => {
-  console.error(error.stack || error.message);
-  process.exit(1);
-});
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  await buildApartmentCoordinateIndex(args);
+}
+
+module.exports = {
+  buildApartmentCoordinateIndex,
+  parseArgs,
+  normalizeBuildOptions,
+  OUTPUT_PATH,
+};
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.stack || error.message);
+    process.exit(1);
+  });
+}
