@@ -1048,7 +1048,9 @@ function getAdminBuildToken(req) {
 
 function isAuthorizedAdminBuildRequest(req) {
   const token = getAdminBuildToken(req);
-  const cacheToken = ENV_FILE.CACHE_TOKEN || process.env.CACHE_TOKEN || "";
+  const cacheToken = String(
+    ENV_FILE.CACHE_TOKEN || process.env.CACHE_TOKEN || "",
+  ).trim();
   const a = Buffer.from(token);
   const b = Buffer.from(cacheToken);
   return Boolean(
@@ -7750,7 +7752,9 @@ const requestHandler = async (req, res) => {
       const authHeader = String(req.headers.authorization || "").trim();
       const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
       const token = headerToken || String(bearerMatch?.[1] || "").trim();
-      const CACHE_TOKEN = ENV_FILE.CACHE_TOKEN || process.env.CACHE_TOKEN || "";
+      const CACHE_TOKEN = String(
+        ENV_FILE.CACHE_TOKEN || process.env.CACHE_TOKEN || "",
+      ).trim();
       // 타이밍 공격 방지: crypto.timingSafeEqual 사용
       const a = Buffer.from(token);
       const b = Buffer.from(CACHE_TOKEN);
