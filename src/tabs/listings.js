@@ -871,7 +871,7 @@ export function buildListingSelects() {
 export function exportListingExcel() {
   const filtered = getFilteredListings();
   if (filtered.length === 0) return alert("다운로드할 데이터가 없습니다.");
-  const headers = ["단지명", "준공년도", "건물나이", "용도지역", "법정상한(%)", "현재용적률(%)", "대지면적(㎡)", "세대수", "근처역", "평지추정", "세대당대지면적(㎡)", "예상신축세대", "일반분양분", "사업성판단"];
+  const headers = ["단지명", "준공년도", "건물나이", "용도지역", "법정상한(%)", "현재용적률(%)", "대지면적(㎡)", "세대수", "근처역", "평지추정", "초등학교(10분)", "공원(10분)", "세대당대지면적(㎡)", "예상신축세대", "일반분양분", "사업성판단"];
   const rows = filtered.map((r) => [
     r.apt,
     r.completionYear || "",
@@ -883,6 +883,8 @@ export function exportListingExcel() {
     r.households ?? "",
     r.nearbyStation || "",
     r.flatLandStatus === "flat" ? "평지" : r.flatLandStatus === "slope" ? "경사" : "",
+    r.nearbyElementarySchool || "",
+    r.nearbyPark || "",
     r.landPerHousehold ?? "",
     r.expectedUnits ?? "",
     r.generalSaleUnits ?? "",
